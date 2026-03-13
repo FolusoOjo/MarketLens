@@ -18,23 +18,26 @@ def get_row(df: pd.DataFrame, possible_labels: list[str]) -> pd.Series:
 
 def clean_yearly_table(df):
     df = df.dropna(axis=1, how="all").copy()
+
     new_cols = []
     for col in df.columns:
         try:
             new_cols.append(str(pd.to_datetime(col).year))
-        except:
+        except Exception:
             new_cols.append(str(col))
     df.columns = new_cols
 
-    df= df.T.groupby(level= 0).first().T
+    df = df.T.groupby(level=0).first().T
 
     try:
-        df= df.reindex(sorted(df.columns, key=int), axis = 1)
-    except:
+        df = df.reindex(sorted(df.columns, key=int), axis=1)
+    except Exception:
         pass
+
     return df
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_data(ticker_symbol: str):
     ticker = yf.Ticker(ticker_symbol)
     balance = ticker.balance_sheet
@@ -42,7 +45,14 @@ def fetch_data(ticker_symbol: str):
     cashflow = ticker.cashflow
     price_5y = ticker.history(period="5y")
     info = ticker.info
-    return ticker, balance, income, cashflow, price_5y, info
+    return balance, income, cashflow, price_5y, info
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_market_data():
+    market = yf.download("^GSPC", period="5y", auto_adjust=True, progress=False)
+    rf_data = yf.download("^TNX", period="5d", auto_adjust=True, progress=False)
+    return market, rf_data
 
 
 def liquidity_analysis(balance: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -107,10 +117,16 @@ def profitability_analysis(balance: pd.DataFrame, income: pd.DataFrame) -> tuple
     return profitability_df, profitability_ratios_df
 
 
-def additional_ratios(balance: pd.DataFrame, income: pd.DataFrame, cashflow: pd.DataFrame, price_5y: pd.DataFrame, profitability_df: pd.DataFrame) -> pd.DataFrame:
+def additional_ratios(
+    balance: pd.DataFrame,
+    income: pd.DataFrame,
+    cashflow: pd.DataFrame,
+    price_5y: pd.DataFrame,
+    profitability_df: pd.DataFrame
+) -> pd.DataFrame:
     total_equity = get_row(balance, ["Total Stockholder Equity", "Stockholders Equity"])
     total_debt = get_row(balance, ["Total Debt", "Long Term Debt"])
-    dividends_paid = get_row(cashflow, ["Cash Dividends Paid", "Dividends Paid"])
+    dividends_paid = get_row(cashflow, ["Cash Dividends Paid", "Dividends Paid", "Common Stock Dividend Paid"])
     net_income = get_row(income, ["Net Income"])
     roe = profitability_df.loc["Return On Equity"]
 
@@ -141,26 +157,42 @@ def additional_ratios(balance: pd.DataFrame, income: pd.DataFrame, cashflow: pd.
 def capm_analysis(price_5y: pd.DataFrame):
     stock_returns = price_5y["Close"].pct_change().dropna()
     if stock_returns.empty:
-        return {"beta": np.nan, "risk_free_rate": np.nan, "market_return": np.nan, "expected_return": np.nan, "returns_df": pd.DataFrame()}
+        return {
+            "beta": np.nan,
+            "risk_free_rate": np.nan,
+            "market_return": np.nan,
+            "expected_return": np.nan,
+            "returns_df": pd.DataFrame()
+        }
 
-    stock_returns.index = stock_returns.index.tz_localize(None)
+    try:
+        stock_returns.index = stock_returns.index.tz_localize(None)
+    except Exception:
+        pass
 
-    market = yf.download("^GSPC", period="5y", auto_adjust=True, progress=False)
+    market, rf_data = fetch_market_data()
     market_returns = market["Close"].pct_change().dropna()
 
     returns_df = pd.concat([stock_returns, market_returns], axis=1)
     returns_df.columns = ["Stock", "Market"]
     returns_df = returns_df.dropna()
 
+    if returns_df.empty:
+        return {
+            "beta": np.nan,
+            "risk_free_rate": np.nan,
+            "market_return": np.nan,
+            "expected_return": np.nan,
+            "returns_df": pd.DataFrame()
+        }
+
     covariance = returns_df.cov().iloc[0, 1]
     market_variance = returns_df["Market"].var()
     beta = covariance / market_variance if market_variance != 0 else np.nan
 
-    rf_data = yf.download("^TNX", period="1d", auto_adjust=True, progress=False)
     risk_free_rate = float(rf_data["Close"].iloc[-1]) / 100 if not rf_data.empty else np.nan
-
     market_return = returns_df["Market"].mean() * 252
-    expected_return = risk_free_rate + beta * (market_return - risk_free_rate)
+    expected_return = risk_free_rate + beta * (market_return - risk_free_rate) if pd.notna(risk_free_rate) and pd.notna(beta) else np.nan
 
     return {
         "beta": beta,
@@ -186,8 +218,8 @@ def fcf_analysis(cashflow: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     return fcf_df, free_cash_flow
 
 
-def wacc_analysis(ticker, balance: pd.DataFrame, income: pd.DataFrame, expected_return: float):
-    market_cap = ticker.info.get("marketCap", np.nan)
+def wacc_analysis(info: dict, balance: pd.DataFrame, income: pd.DataFrame, expected_return: float):
+    market_cap = info.get("marketCap", np.nan)
     total_debt = get_row(balance, ["Total Debt", "Long Term Debt"])
     interest_expense = get_row(income, [
         "Interest Expense",
@@ -227,7 +259,11 @@ def wacc_analysis(ticker, balance: pd.DataFrame, income: pd.DataFrame, expected_
     D = total_debt_matched
     V = E + D
 
-    wacc = (E / V) * expected_return + (D / V) * cost_of_debt * (1 - tax_rate) if pd.notna(D) and pd.notna(cost_of_debt) and pd.notna(tax_rate) and V != 0 else np.nan
+    wacc = (
+        (E / V) * expected_return + (D / V) * cost_of_debt * (1 - tax_rate)
+        if pd.notna(D) and pd.notna(cost_of_debt) and pd.notna(tax_rate) and pd.notna(expected_return) and V != 0
+        else np.nan
+    )
 
     return {
         "market_cap": market_cap,
@@ -240,13 +276,13 @@ def wacc_analysis(ticker, balance: pd.DataFrame, income: pd.DataFrame, expected_
     }
 
 
-def dcf_analysis(ticker, free_cash_flow: pd.Series, wacc: float, price_5y: pd.DataFrame):
+def dcf_analysis(info: dict, free_cash_flow: pd.Series, wacc: float, price_5y: pd.DataFrame):
     fcf_clean = free_cash_flow.dropna()
     if fcf_clean.empty or pd.isna(wacc) or wacc <= 0:
         return {"fcf_latest": np.nan, "firm_value": np.nan, "intrinsic_price": np.nan, "current_price": np.nan}
 
     fcf_latest = float(fcf_clean.iloc[-1])
-    shares_outstanding = ticker.info.get("sharesOutstanding", np.nan)
+    shares_outstanding = info.get("sharesOutstanding", np.nan)
 
     growth_rate = 0.03
     projection_years = 5
@@ -266,7 +302,11 @@ def dcf_analysis(ticker, free_cash_flow: pd.Series, wacc: float, price_5y: pd.Da
     discounted_terminal_value = terminal_value / (1 + wacc) ** projection_years if pd.notna(terminal_value) else np.nan
 
     firm_value = sum(discounted_fcfs) + discounted_terminal_value if pd.notna(discounted_terminal_value) else np.nan
-    intrinsic_price = firm_value / shares_outstanding if pd.notna(firm_value) and pd.notna(shares_outstanding) and shares_outstanding != 0 else np.nan
+    intrinsic_price = (
+        firm_value / shares_outstanding
+        if pd.notna(firm_value) and pd.notna(shares_outstanding) and shares_outstanding != 0
+        else np.nan
+    )
     current_price = float(price_5y["Close"].dropna().iloc[-1]) if not price_5y.empty else np.nan
 
     return {
@@ -284,7 +324,8 @@ ticker_symbol = st.text_input("Enter stock ticker", value="AAPL").strip().upper(
 
 if st.button("Analyze"):
     try:
-        ticker, balance, income, cashflow, price_5y, info = fetch_data(ticker_symbol)
+        with st.spinner("Fetching financial data..."):
+            balance, income, cashflow, price_5y, info = fetch_data(ticker_symbol)
 
         if balance.empty or income.empty or cashflow.empty or price_5y.empty:
             st.error("Some data is missing for this ticker. Try another company.")
@@ -294,8 +335,8 @@ if st.button("Analyze"):
             add_df = additional_ratios(balance, income, cashflow, price_5y, profitability_df)
             capm = capm_analysis(price_5y)
             fcf_df, free_cash_flow = fcf_analysis(cashflow)
-            wacc_data = wacc_analysis(ticker, balance, income, capm["expected_return"])
-            dcf_data = dcf_analysis(ticker, free_cash_flow, wacc_data["wacc"], price_5y)
+            wacc_data = wacc_analysis(info, balance, income, capm["expected_return"])
+            dcf_data = dcf_analysis(info, free_cash_flow, wacc_data["wacc"], price_5y)
 
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Current Price", f"${dcf_data['current_price']:,.2f}" if pd.notna(dcf_data['current_price']) else "N/A")
@@ -311,16 +352,16 @@ if st.button("Analyze"):
             st.pyplot(fig)
 
             st.subheader("Liquidity Ratios")
-            st.dataframe(liquidity_ratios_df)
+            st.dataframe(liquidity_ratios_df.fillna("N/A"))
 
             st.subheader("Profitability Ratios")
-            st.dataframe(profitability_ratios_df)
+            st.dataframe(profitability_ratios_df.fillna("N/A"))
 
             st.subheader("Additional Ratios")
-            st.dataframe(add_df)
+            st.dataframe(add_df.fillna("N/A"))
 
             st.subheader("Free Cash Flow")
-            st.dataframe(fcf_df)
+            st.dataframe(fcf_df.fillna("N/A"))
 
             st.subheader("CAPM Summary")
             st.write(f"Risk-Free Rate: {capm['risk_free_rate']:.2%}" if pd.notna(capm['risk_free_rate']) else "Risk-Free Rate: N/A")
@@ -338,4 +379,7 @@ if st.button("Analyze"):
             st.write(f"Intrinsic Stock Price: ${dcf_data['intrinsic_price']:,.2f}" if pd.notna(dcf_data['intrinsic_price']) else "Intrinsic Stock Price: N/A")
 
     except Exception as e:
-        st.error(f"Could not analyze {ticker_symbol}: {e}")
+        if "Too Many Requests" in str(e) or "Rate limited" in str(e):
+            st.error("Yahoo Finance is rate-limiting the app right now. Wait a bit and try again.")
+        else:
+            st.error(f"Could not analyze {ticker_symbol}: {e}")
