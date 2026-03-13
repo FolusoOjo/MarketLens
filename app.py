@@ -16,7 +16,7 @@ def get_row(df: pd.DataFrame, possible_labels: list[str]) -> pd.Series:
     return pd.Series([np.nan] * len(df.columns), index=df.columns)
 
 
-def clean_yearly_table(df):
+def clean_yearly_table(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(axis=1, how="all").copy()
 
     new_cols = []
@@ -44,8 +44,35 @@ def fetch_data(ticker_symbol: str):
     income = ticker.financials
     cashflow = ticker.cashflow
     price_5y = ticker.history(period="5y")
-    info = ticker.info
-    return balance, income, cashflow, price_5y, info
+    return balance, income, cashflow, price_5y
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_company_meta(ticker_symbol: str):
+    ticker = yf.Ticker(ticker_symbol)
+
+    market_cap = np.nan
+    shares_outstanding = np.nan
+
+    try:
+        fast = ticker.fast_info
+        market_cap = fast.get("market_cap", np.nan)
+        shares_outstanding = fast.get("shares", np.nan)
+    except Exception:
+        pass
+
+    if pd.isna(market_cap) or pd.isna(shares_outstanding):
+        try:
+            info = ticker.info
+            market_cap = info.get("marketCap", market_cap)
+            shares_outstanding = info.get("sharesOutstanding", shares_outstanding)
+        except Exception:
+            pass
+
+    return {
+        "market_cap": market_cap,
+        "shares_outstanding": shares_outstanding
+    }
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -218,8 +245,8 @@ def fcf_analysis(cashflow: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     return fcf_df, free_cash_flow
 
 
-def wacc_analysis(info: dict, balance: pd.DataFrame, income: pd.DataFrame, expected_return: float):
-    market_cap = info.get("marketCap", np.nan)
+def wacc_analysis(meta: dict, balance: pd.DataFrame, income: pd.DataFrame, expected_return: float):
+    market_cap = meta.get("market_cap", np.nan)
     total_debt = get_row(balance, ["Total Debt", "Long Term Debt"])
     interest_expense = get_row(income, [
         "Interest Expense",
@@ -276,13 +303,13 @@ def wacc_analysis(info: dict, balance: pd.DataFrame, income: pd.DataFrame, expec
     }
 
 
-def dcf_analysis(info: dict, free_cash_flow: pd.Series, wacc: float, price_5y: pd.DataFrame):
+def dcf_analysis(meta: dict, free_cash_flow: pd.Series, wacc: float, price_5y: pd.DataFrame):
     fcf_clean = free_cash_flow.dropna()
     if fcf_clean.empty or pd.isna(wacc) or wacc <= 0:
         return {"fcf_latest": np.nan, "firm_value": np.nan, "intrinsic_price": np.nan, "current_price": np.nan}
 
     fcf_latest = float(fcf_clean.iloc[-1])
-    shares_outstanding = info.get("sharesOutstanding", np.nan)
+    shares_outstanding = meta.get("shares_outstanding", np.nan)
 
     growth_rate = 0.03
     projection_years = 5
@@ -325,7 +352,8 @@ ticker_symbol = st.text_input("Enter stock ticker", value="AAPL").strip().upper(
 if st.button("Analyze"):
     try:
         with st.spinner("Fetching financial data..."):
-            balance, income, cashflow, price_5y, info = fetch_data(ticker_symbol)
+            balance, income, cashflow, price_5y = fetch_data(ticker_symbol)
+            meta = fetch_company_meta(ticker_symbol)
 
         if balance.empty or income.empty or cashflow.empty or price_5y.empty:
             st.error("Some data is missing for this ticker. Try another company.")
@@ -335,8 +363,8 @@ if st.button("Analyze"):
             add_df = additional_ratios(balance, income, cashflow, price_5y, profitability_df)
             capm = capm_analysis(price_5y)
             fcf_df, free_cash_flow = fcf_analysis(cashflow)
-            wacc_data = wacc_analysis(info, balance, income, capm["expected_return"])
-            dcf_data = dcf_analysis(info, free_cash_flow, wacc_data["wacc"], price_5y)
+            wacc_data = wacc_analysis(meta, balance, income, capm["expected_return"])
+            dcf_data = dcf_analysis(meta, free_cash_flow, wacc_data["wacc"], price_5y)
 
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Current Price", f"${dcf_data['current_price']:,.2f}" if pd.notna(dcf_data['current_price']) else "N/A")
