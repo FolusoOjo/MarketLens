@@ -248,7 +248,7 @@ def fetch_meta(sym):
         industry = info.get("industry", "")
         country  = info.get("country", "")
         employees= info.get("fullTimeEmployees", None)
-        if info.get("quoteType", "") in ("ETF", "MUTUALFUND") 
+        if info.get("quoteType", "") in ("ETF", "MUTUALFUND"):
             is_etf = True
             etf_extra = {
                 "fund_family":   info.get("fundFamily", "N/A"),
