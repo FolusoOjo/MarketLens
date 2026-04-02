@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import scipy.stats as stats
+import time
 
 pd.options.display.float_format = '{:,.2f}'.format
 
@@ -207,6 +208,22 @@ def fetch_data(sym):
     h1 = flatten_columns(h1)
     return t.balance_sheet, t.financials, t.cashflow, h5, h1
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_data(sym):
+    for attempt in range(3):
+        try:
+            t = yf.Ticker(sym)
+            h5 = t.history(period="5y")
+            h1 = t.history(period="1y")
+            h5 = flatten_columns(h5)
+            h1 = flatten_columns(h1)
+            return t.balance_sheet, t.financials, t.cashflow, h5, h1
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+            else:
+                raise e
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_meta(sym):
