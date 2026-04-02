@@ -8,17 +8,15 @@ import scipy.stats as stats
 
 pd.options.display.float_format = '{:,.2f}'.format
 
-st.set_page_config(page_title="Financial Analytics Dashboard", layout="wide")
+st.set_page_config(page_title="Vantage Finance", layout="wide")
 
 # ── Global styles — Soft Purple & Slate fintech theme ─────────────────────────
 st.markdown("""
 <style>
-/* Page background — light warm slate */
 [data-testid="stAppViewContainer"] { background: #f4f3f8; }
 [data-testid="stHeader"] { background: transparent; }
 [data-testid="stSidebar"] { background: #eeecf6; }
 
-/* Metric card */
 .fin-card {
     background: #ffffff;
     border: 1px solid #e2dff0;
@@ -59,7 +57,6 @@ st.markdown("""
 .fin-card.warn  .value { color: #b45309; }
 .fin-card.bad   .value { color: #b91c1c; }
 
-/* Section header */
 .section-header {
     font-size: 11px;
     font-weight: 700;
@@ -71,7 +68,6 @@ st.markdown("""
     margin: 28px 0 14px;
 }
 
-/* Company header */
 .company-header {
     background: #ffffff;
     border: 1px solid #e2dff0;
@@ -104,13 +100,11 @@ st.markdown("""
 .rec-hold { background: #fef3c7; color: #b45309; }
 .rec-sell { background: #fee2e2; color: #b91c1c; }
 
-/* Overview grid */
 .ov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
 .ov-item { background: #ffffff; border: 1px solid #e2dff0; border-radius: 10px; padding: 12px 14px; }
 .ov-label { font-size: 11px; color: #9d8ec4; margin-bottom: 4px; font-weight: 500; }
 .ov-val   { font-size: 14px; font-weight: 700; color: #1e1b4b; }
 
-/* Valuation bar */
 .val-section {
     background: #ffffff;
     border: 1px solid #e2dff0;
@@ -124,10 +118,54 @@ st.markdown("""
 .bar-track { height: 6px; background: #e2dff0; border-radius: 4px; margin-top: 8px; }
 .bar-fill  { height: 6px; border-radius: 4px; }
 
-/* Hide default streamlit elements */
+.sector-row {
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e2dff0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    gap: 12px;
+}
+.sector-rank { font-size: 12px; color: #9d8ec4; font-weight: 700; width: 24px; }
+.sector-sym  { font-size: 14px; font-weight: 700; color: #1e1b4b; flex: 1; }
+.sector-mc   { font-size: 13px; color: #534AB7; font-weight: 600; flex: 1; text-align: right; }
+.sector-px   { font-size: 13px; color: #1e1b4b; flex: 1; text-align: right; }
+
 #MainMenu, footer, header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── Sector data ────────────────────────────────────────────────────────────────
+
+SECTOR_TICKERS = {
+    "Technology":            ["AAPL","MSFT","NVDA","AVGO","ORCL","AMD","QCOM","INTC","IBM","TXN"],
+    "Healthcare":            ["LLY","UNH","JNJ","ABBV","MRK","ABT","TMO","DHR","AMGN","PFE"],
+    "Financials":            ["BRK-B","JPM","V","MA","BAC","WFC","GS","MS","BLK","AXP"],
+    "Consumer Discretionary":["AMZN","TSLA","HD","MCD","NKE","LOW","SBUX","TJX","BKNG","ABNB"],
+    "Communication Services":["GOOGL","META","NFLX","DIS","CMCSA","T","VZ","TMUS","EA","PARA"],
+    "Industrials":           ["GE","CAT","RTX","HON","UPS","DE","LMT","BA","MMM","CSX"],
+    "Energy":                ["XOM","CVX","COP","EOG","SLB","MPC","PSX","VLO","OXY","KMI"],
+    "Consumer Staples":      ["WMT","PG","KO","PEP","COST","PM","MO","CL","MDLZ","KHC"],
+    "Real Estate":           ["PLD","AMT","EQIX","CCI","SPG","PSA","O","WELL","AVB","DLR"],
+    "Utilities":             ["NEE","SO","DUK","AEP","SRE","D","XEL","EXC","PCG","AWK"],
+    "Materials":             ["LIN","APD","SHW","ECL","NEM","FCX","NUE","VMC","MLM","ALB"],
+}
+
+ASSET_TYPES = {
+    "Stock / ETF": "stock",
+    "Cryptocurrency": "crypto",
+    "Forex": "forex",
+    "Futures": "futures",
+    "Index": "index",
+}
+
+CRYPTO_EXAMPLES  = ["BTC-USD","ETH-USD","SOL-USD","BNB-USD","XRP-USD"]
+FOREX_EXAMPLES   = ["EURUSD=X","GBPUSD=X","JPYUSD=X","AUDUSD=X","CADUSD=X"]
+FUTURES_EXAMPLES = ["CL=F","GC=F","SI=F","NG=F","ZC=F"]
+INDEX_EXAMPLES   = ["^GSPC","^DJI","^IXIC","^RUT","^VIX"]
 
 
 # ── Helper utilities ───────────────────────────────────────────────────────────
@@ -188,7 +226,7 @@ def quality(val, low, high):
     return "good" if val >= high else ("warn" if val >= low else "bad")
 
 
-# ── Data fetching (cached) ─────────────────────────────────────────────────────
+# ── Data fetching ──────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_data(sym):
@@ -200,6 +238,8 @@ def fetch_data(sym):
 def fetch_meta(sym):
     t = yf.Ticker(sym)
     mc, sh, name, sector, industry, country, employees = np.nan, np.nan, sym, "", "", "", None
+    is_etf = False
+    etf_extra = {}
     try:
         f = t.fast_info
         mc = f.get("market_cap", np.nan)
@@ -215,10 +255,26 @@ def fetch_meta(sym):
         industry = info.get("industry", "")
         country  = info.get("country", "")
         employees= info.get("fullTimeEmployees", None)
+        if info.get("quoteType", "") in ("ETF", "MUTUALFUND") or \
+           (not sector and info.get("fundFamily")):
+            is_etf = True
+            etf_extra = {
+                "fund_family":   info.get("fundFamily", "N/A"),
+                "category":      info.get("category", "N/A"),
+                "expense_ratio": info.get("annualReportExpenseRatio",
+                                 info.get("totalExpenseRatio", np.nan)),
+                "nav":           info.get("navPrice", np.nan),
+                "aum":           info.get("totalAssets", np.nan),
+                "ytd_return":    info.get("ytdReturn", np.nan),
+                "three_year":    info.get("threeYearAverageReturn", np.nan),
+                "five_year":     info.get("fiveYearAverageReturn", np.nan),
+                "beta_3y":       info.get("beta3Year", np.nan),
+            }
     except Exception:
         pass
     return {"market_cap": mc, "shares_outstanding": sh, "name": name,
-            "sector": sector, "industry": industry, "country": country, "employees": employees}
+            "sector": sector, "industry": industry, "country": country,
+            "employees": employees, "is_etf": is_etf, "etf_extra": etf_extra}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -226,6 +282,29 @@ def fetch_market():
     market = yf.download("^GSPC", period="10y", auto_adjust=True, progress=False)
     rf     = yf.download("^TNX",  period="5d",  auto_adjust=True, progress=False)
     return market, rf
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_sector_snapshot(tickers: tuple):
+    rows = []
+    for sym in tickers:
+        try:
+            info = yf.Ticker(sym).fast_info
+            rows.append({
+                "Ticker":     sym,
+                "Market Cap": info.get("market_cap", np.nan),
+                "Price":      info.get("last_price",  np.nan),
+            })
+        except Exception:
+            rows.append({"Ticker": sym, "Market Cap": np.nan, "Price": np.nan})
+    df = pd.DataFrame(rows).set_index("Ticker")
+    df = df.sort_values("Market Cap", ascending=False)
+    return df
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_simple_history(sym, period="1y"):
+    return yf.Ticker(sym).history(period=period)
 
 
 # ── Analysis functions ─────────────────────────────────────────────────────────
@@ -306,8 +385,8 @@ def capm_analysis(price_5y):
         return {"beta": np.nan, "risk_free_rate": np.nan,
                 "market_return": np.nan, "expected_return": np.nan,
                 "slope": np.nan, "r_squared": np.nan}
-    cov = ret.cov().iloc[0, 1]
-    mv  = ret["Market"].var()
+    cov  = ret.cov().iloc[0, 1]
+    mv   = ret["Market"].var()
     beta = cov / mv if mv != 0 else np.nan
     slope, intercept, r_val, p_val, se = stats.linregress(ret["Market"], ret["Stock"])
     rf   = float(rf_data["Close"].iloc[-1]) / 100 if not rf_data.empty else np.nan
@@ -372,32 +451,325 @@ def dcf_analysis(meta, fcf_series, wacc, price_5y):
     return {"fcf_latest": fl, "firm_value": fv, "intrinsic_price": ip, "current_price": cp}
 
 
-# ── UI ─────────────────────────────────────────────────────────────────────────
+# ── Price chart helper ─────────────────────────────────────────────────────────
+
+def draw_price_chart(price_1y, ticker_symbol):
+    fig, ax = plt.subplots(figsize=(12, 3.5))
+    fig.patch.set_facecolor("#ffffff")
+    ax.set_facecolor("#ffffff")
+    closes = price_1y["Close"]
+    ax.plot(closes.index, closes.values, color="#7C3AED", linewidth=2)
+    ax.fill_between(closes.index, closes.values, closes.min(), alpha=0.08, color="#7C3AED")
+    ax.set_xlabel("Date", color="#9d8ec4", fontsize=10)
+    ax.set_ylabel("Price (USD)", color="#9d8ec4", fontsize=10)
+    ax.tick_params(colors="#9d8ec4")
+    ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("${x:,.2f}"))
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#e2dff0")
+    ax.grid(axis="y", color="#e2dff0", linewidth=0.5)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close()
+
+
+# ── Sidebar ────────────────────────────────────────────────────────────────────
+
+with st.sidebar:
+    st.markdown("""
+    <div style='padding: 0.5rem 0 1rem;'>
+      <span style='font-size:20px; font-weight:800; color:#1e1b4b;'>Vantage Finance</span><br>
+      <span style='font-size:11px; color:#9d8ec4;'>Professional financial analytics</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("### 🏭 Sector Explorer")
+    st.caption("Live top 10 by market cap — click any ticker to analyse it.")
+
+    chosen_sector = st.selectbox("Sector", list(SECTOR_TICKERS.keys()))
+
+    if st.button("Load Top 10 →", use_container_width=True):
+        st.session_state["show_sector"] = chosen_sector
+
+    st.markdown("---")
+    st.markdown("### 🌐 Asset Types")
+    st.caption("Vantage supports stocks, ETFs, crypto, forex, futures & indices.")
+    with st.expander("See example tickers"):
+        st.markdown("**Crypto:** " + " · ".join(CRYPTO_EXAMPLES))
+        st.markdown("**Forex:** " + " · ".join(FOREX_EXAMPLES))
+        st.markdown("**Futures:** " + " · ".join(FUTURES_EXAMPLES))
+        st.markdown("**Indices:** " + " · ".join(INDEX_EXAMPLES))
+
+
+# ── Sector Explorer Panel ──────────────────────────────────────────────────────
+
+if "show_sector" in st.session_state:
+    sector_name = st.session_state["show_sector"]
+    tickers     = SECTOR_TICKERS[sector_name]
+
+    st.markdown(f"""
+    <div style='padding: 0.5rem 0 0.2rem;'>
+      <span style='font-size:22px; font-weight:800; color:#1e1b4b;'>🏭 {sector_name} — Top 10</span><br>
+      <span style='font-size:12px; color:#9d8ec4;'>Ranked by live market capitalisation. Click Analyse → to deep-dive any company.</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.spinner("Fetching live market data…"):
+        snap = fetch_sector_snapshot(tuple(tickers))
+
+    header_cols = st.columns([0.4, 1.2, 1.8, 1.2, 1.2])
+    header_cols[0].markdown("**#**")
+    header_cols[1].markdown("**Ticker**")
+    header_cols[2].markdown("**Market Cap**")
+    header_cols[3].markdown("**Price**")
+    header_cols[4].markdown("")
+
+    for i, (sym, row) in enumerate(snap.iterrows(), 1):
+        mc_str  = fmt_big(row["Market Cap"])
+        px_str  = f"${row['Price']:,.2f}" if pd.notna(row["Price"]) else "N/A"
+        c1, c2, c3, c4, c5 = st.columns([0.4, 1.2, 1.8, 1.2, 1.2])
+        c1.markdown(f"**#{i}**")
+        c2.markdown(f"**{sym}**")
+        c3.markdown(mc_str)
+        c4.markdown(px_str)
+        if c5.button("Analyse →", key=f"sec_{sym}_{i}"):
+            st.session_state["ticker_prefill"] = sym
+            del st.session_state["show_sector"]
+            st.rerun()
+
+    if st.button("✕ Close Sector View", use_container_width=True):
+        del st.session_state["show_sector"]
+        st.rerun()
+
+    st.stop()
+
+
+# ── Main header & search ───────────────────────────────────────────────────────
 
 st.markdown("""
 <div style='padding: 1rem 0 0.5rem;'>
-  <span style='font-size:28px; font-weight:700; color:#1e1b4b;'>Financial Analytics Dashboard</span><br>
-  <span style='font-size:13px; color:#9d8ec4;'>Enter any stock ticker to analyse ratios, CAPM, FCF, WACC & DCF valuation.</span>
+  <span style='font-size:28px; font-weight:700; color:#1e1b4b;'>⚡ Vantage Finance</span><br>
+  <span style='font-size:13px; color:#9d8ec4;'>Search any stock, ETF, crypto, forex pair, futures contract or index.</span>
 </div>
 """, unsafe_allow_html=True)
 
+default_ticker = st.session_state.pop("ticker_prefill", "AAPL")
+
 col_input, col_btn = st.columns([5, 1])
 with col_input:
-    ticker_symbol = st.text_input("", value="AAPL", placeholder="e.g. AAPL, MSFT, TSLA",
-                                   label_visibility="collapsed").strip().upper()
+    ticker_symbol = st.text_input(
+        "", value=default_ticker,
+        placeholder="e.g. AAPL · BTC-USD · EURUSD=X · GC=F · ^GSPC",
+        label_visibility="collapsed"
+    ).strip().upper()
 with col_btn:
     st.markdown("<div style='padding-top:4px'>", unsafe_allow_html=True)
     analyse = st.button("Analyse →", use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
+
+# ── Asset-type detection helpers ───────────────────────────────────────────────
+
+def detect_asset_type(sym: str) -> str:
+    s = sym.upper()
+    if s.endswith("-USD") or s.endswith("-USDT") or s.endswith("-BTC"):
+        return "crypto"
+    if s.endswith("=X"):
+        return "forex"
+    if s.endswith("=F"):
+        return "futures"
+    if s.startswith("^"):
+        return "index"
+    return "stock_etf"
+
+
+def render_simple_asset(sym, asset_type, label_str):
+    """Shared renderer for crypto / forex / futures / indices."""
+    with st.spinner(f"Fetching {label_str} data…"):
+        hist_1y = fetch_simple_history(sym, "1y")
+        hist_5y = fetch_simple_history(sym, "5y")
+
+    if hist_1y.empty:
+        st.error(f"No data found for **{sym}**. Check the ticker and try again.")
+        return
+
+    cp       = float(hist_1y["Close"].dropna().iloc[-1])
+    prev_row = hist_1y["Close"].dropna()
+    change   = float(prev_row.iloc[-1] - prev_row.iloc[-2]) if len(prev_row) >= 2 else 0
+    chg_pct  = (change / float(prev_row.iloc[-2])) * 100 if len(prev_row) >= 2 else 0
+    chg_cls  = "price-up" if change >= 0 else "price-down"
+    chg_sign = "+" if change >= 0 else ""
+
+    hi_1y = float(hist_1y["High"].max())
+    lo_1y = float(hist_1y["Low"].min())
+    vol   = float(hist_1y["Volume"].mean()) if "Volume" in hist_1y else np.nan
+
+    badge_colors = {
+        "crypto":  ("#fef3c7", "#b45309", "CRYPTO"),
+        "forex":   ("#e0f2fe", "#0369a1", "FOREX"),
+        "futures": ("#fce7f3", "#9d174d", "FUTURES"),
+        "index":   ("#ede9fe", "#5b21b6", "INDEX"),
+    }
+    bg, fg, badge_label = badge_colors.get(asset_type, ("#f3f4f6","#374151","ASSET"))
+
+    try:
+        info = yf.Ticker(sym).info
+        full_name = info.get("longName", info.get("shortName", sym))
+    except Exception:
+        full_name = sym
+
+    st.markdown(f"""
+    <div class="company-header">
+      <div>
+        <div class="company-name">{full_name}
+          <span style='font-size:15px;font-weight:400;color:#9d8ec4;'>{sym}</span>
+        </div>
+        <div class="company-sub">{label_str}</div>
+        <span class="rec-badge" style="background:{bg};color:{fg};">{badge_label}</span>
+      </div>
+      <div>
+        <div class="price-big">{cp:,.4f}</div>
+        <div class="price-change {chg_cls}">{chg_sign}{change:.4f} ({chg_sign}{chg_pct:.2f}%)</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Key stats
+    st.markdown('<div class="section-header">Key statistics</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="ov-grid">
+      <div class="ov-item"><div class="ov-label">Current price</div><div class="ov-val">{cp:,.4f}</div></div>
+      <div class="ov-item"><div class="ov-label">52W High</div><div class="ov-val">{hi_1y:,.4f}</div></div>
+      <div class="ov-item"><div class="ov-label">52W Low</div><div class="ov-val">{lo_1y:,.4f}</div></div>
+      <div class="ov-item"><div class="ov-label">Avg daily volume</div><div class="ov-val">{vol:,.0f if pd.notna(vol) else 'N/A'}</div></div>
+      <div class="ov-item"><div class="ov-label">1Y change</div>
+        <div class="ov-val" style="color:{'#15803d' if hist_1y['Close'].iloc[-1] >= hist_1y['Close'].iloc[0] else '#b91c1c'}">
+          {((hist_1y['Close'].iloc[-1]/hist_1y['Close'].iloc[0])-1)*100:.2f}%
+        </div>
+      </div>
+      <div class="ov-item"><div class="ov-label">Data points (1Y)</div><div class="ov-val">{len(hist_1y):,}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 1Y chart
+    st.markdown('<div class="section-header">1-year price chart</div>', unsafe_allow_html=True)
+    draw_price_chart(hist_1y, sym)
+
+    # CAPM / risk if 5y data available
+    if not hist_5y.empty:
+        capm_res = capm_analysis(hist_5y)
+        st.markdown('<div class="section-header">CAPM & risk (vs S&P 500)</div>', unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        beta_q = "good" if pd.notna(capm_res['beta']) and capm_res['beta'] < 0.8 else \
+                 "warn" if pd.notna(capm_res['beta']) and capm_res['beta'] < 1.5 else "bad"
+        with c1:
+            st.markdown(card_html("Beta (5Y)", fmt_num(capm_res['beta']), "vs S&P 500", "#534AB7", beta_q), unsafe_allow_html=True)
+        with c2:
+            st.markdown(card_html("Risk-free rate", fmt_pct(capm_res['risk_free_rate']), "10Y US Treasury", "#185FA5"), unsafe_allow_html=True)
+        with c3:
+            st.markdown(card_html("Market return", fmt_pct(capm_res['market_return']), "S&P 500 10Y avg", "#1D9E75"), unsafe_allow_html=True)
+        with c4:
+            st.markdown(card_html("Expected return", fmt_pct(capm_res['expected_return']), "Re = Rf + β(Rm − Rf)", "#D85A30"), unsafe_allow_html=True)
+
+    st.info(f"**{sym}** is a {label_str}. Full financial statement analysis (WACC, DCF, ratios) is only available for individual stocks.")
+
+
+# ── Main analysis ──────────────────────────────────────────────────────────────
+
 if analyse:
+    asset_type = detect_asset_type(ticker_symbol)
+
+    # ── Non-stock assets ───────────────────────────────────────────────────────
+    if asset_type == "crypto":
+        render_simple_asset(ticker_symbol, "crypto", "Cryptocurrency")
+        st.stop()
+    elif asset_type == "forex":
+        render_simple_asset(ticker_symbol, "forex", "Forex / Currency Pair")
+        st.stop()
+    elif asset_type == "futures":
+        render_simple_asset(ticker_symbol, "futures", "Futures Contract")
+        st.stop()
+    elif asset_type == "index":
+        render_simple_asset(ticker_symbol, "index", "Market Index")
+        st.stop()
+
+    # ── Stock / ETF ────────────────────────────────────────────────────────────
     try:
         with st.spinner("Fetching financial data…"):
             balance, income, cashflow, price_5y, price_1y = fetch_data(ticker_symbol)
             meta = fetch_meta(ticker_symbol)
 
-        if balance.empty or income.empty or cashflow.empty or price_5y.empty:
-            st.error("Some data is missing for this ticker. Try another company.")
+        is_etf = meta.get("is_etf", False)
+
+        # ── ETF branch ─────────────────────────────────────────────────────────
+        if is_etf or (balance.empty and income.empty):
+            ex = meta.get("etf_extra", {})
+            cp = float(price_5y["Close"].dropna().iloc[-1]) if not price_5y.empty else np.nan
+            prev_row = price_5y["Close"].dropna()
+            change   = float(prev_row.iloc[-1] - prev_row.iloc[-2]) if len(prev_row) >= 2 else 0
+            chg_pct  = (change / float(prev_row.iloc[-2])) * 100 if len(prev_row) >= 2 else 0
+            chg_cls  = "price-up" if change >= 0 else "price-down"
+            chg_sign = "+" if change >= 0 else ""
+            name     = meta.get("name", ticker_symbol)
+
+            st.markdown(f"""
+            <div class="company-header">
+              <div>
+                <div class="company-name">{name}
+                  <span style='font-size:15px;font-weight:400;color:#9d8ec4;'>{ticker_symbol}</span>
+                </div>
+                <div class="company-sub">{ex.get('fund_family','N/A')} · {ex.get('category','N/A')}</div>
+                <span class="rec-badge" style="background:#ede9fe;color:#5b21b6;">ETF</span>
+              </div>
+              <div>
+                <div class="price-big">${cp:,.2f}</div>
+                <div class="price-change {chg_cls}">{chg_sign}{change:.2f} ({chg_sign}{chg_pct:.2f}%)</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-header">Fund overview</div>', unsafe_allow_html=True)
+            aum_v = ex.get('aum', np.nan)
+            nav_v = ex.get('nav', np.nan)
+            exp_v = ex.get('expense_ratio', np.nan)
+            ytd_v = ex.get('ytd_return', np.nan)
+            t3_v  = ex.get('three_year', np.nan)
+            t5_v  = ex.get('five_year', np.nan)
+            st.markdown(f"""
+            <div class="ov-grid">
+              <div class="ov-item"><div class="ov-label">AUM</div><div class="ov-val">{fmt_big(aum_v)}</div></div>
+              <div class="ov-item"><div class="ov-label">NAV</div><div class="ov-val">{fmt_big(nav_v) if pd.notna(nav_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">Expense ratio</div><div class="ov-val">{fmt_pct(exp_v) if pd.notna(exp_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">YTD return</div><div class="ov-val">{fmt_pct(ytd_v) if pd.notna(ytd_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">3-year avg return</div><div class="ov-val">{fmt_pct(t3_v) if pd.notna(t3_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">5-year avg return</div><div class="ov-val">{fmt_pct(t5_v) if pd.notna(t5_v) else 'N/A'}</div></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-header">1-year price</div>', unsafe_allow_html=True)
+            draw_price_chart(price_1y, ticker_symbol)
+
+            capm_etf = capm_analysis(price_5y)
+            st.markdown('<div class="section-header">CAPM & risk</div>', unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
+            beta_3y = ex.get('beta_3y', np.nan)
+            beta_q  = "good" if pd.notna(capm_etf['beta']) and capm_etf['beta'] < 0.8 else \
+                      "warn" if pd.notna(capm_etf['beta']) and capm_etf['beta'] < 1.5 else "bad"
+            with c1:
+                st.markdown(card_html("Beta (3Y fund)", fmt_num(beta_3y), "Reported by fund", "#534AB7", beta_q), unsafe_allow_html=True)
+            with c2:
+                st.markdown(card_html("Beta (calc)", fmt_num(capm_etf['beta']), "Regression vs S&P 500", "#7C3AED", beta_q), unsafe_allow_html=True)
+            with c3:
+                st.markdown(card_html("Risk-free rate", fmt_pct(capm_etf['risk_free_rate']), "10Y US Treasury", "#185FA5"), unsafe_allow_html=True)
+            with c4:
+                st.markdown(card_html("Expected return", fmt_pct(capm_etf['expected_return']), "Re = Rf + β(Rm − Rf)", "#D85A30"), unsafe_allow_html=True)
+
+            st.info(f"**{ticker_symbol} is an ETF.** Financial statements are not available for funds — showing fund-specific metrics above instead.")
+            st.stop()
+
+        # ── Stock branch ───────────────────────────────────────────────────────
+        if price_5y.empty:
+            st.error("No price data found for this ticker.")
             st.stop()
 
         liq_df,  liq_ratios  = liquidity_analysis(balance)
@@ -419,7 +791,6 @@ if analyse:
         else:
             rec, rec_cls = "HOLD", "rec-hold"
 
-        # ── Company header ────────────────────────────────────────────────────
         name     = meta.get("name", ticker_symbol)
         sector   = meta.get("sector", "")
         industry = meta.get("industry", "")
@@ -436,7 +807,8 @@ if analyse:
               <span style='font-size:15px;font-weight:400;color:#6b7280;'>{ticker_symbol}</span>
             </div>
             <div class="company-sub">{sector} · {industry}</div>
-            <span class="rec-badge {rec_cls}">{rec}</span>
+            <span class="rec-badge rec-{rec.lower()}">{rec}</span>
+            <span class="rec-badge" style="background:#ede9fe;color:#5b21b6;margin-left:6px;">STOCK</span>
           </div>
           <div>
             <div class="price-big">${cp:,.2f}</div>
@@ -445,47 +817,30 @@ if analyse:
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Company overview ──────────────────────────────────────────────────
+        # Company overview
         st.markdown('<div class="section-header">Company overview</div>', unsafe_allow_html=True)
-        rev_val = get_row(income, ["Total Revenue", "Revenue"]).dropna().iloc[-1] \
-                  if not get_row(income, ["Total Revenue","Revenue"]).dropna().empty else np.nan
-        ni_val  = get_row(income, ["Net Income"]).dropna().iloc[-1] \
-                  if not get_row(income, ["Net Income"]).dropna().empty else np.nan
-        ocf_val = get_row(cashflow, ["Operating Cash Flow","Total Cash From Operating Activities"]).dropna().iloc[-1] \
-                  if not get_row(cashflow, ["Operating Cash Flow","Total Cash From Operating Activities"]).dropna().empty else np.nan
+        rev_val = get_row(income, ["Total Revenue", "Revenue"]).dropna()
+        ni_val  = get_row(income, ["Net Income"]).dropna()
+        ocf_val = get_row(cashflow, ["Operating Cash Flow","Total Cash From Operating Activities"]).dropna()
         employees = meta.get("employees")
         emp_str   = f"{employees:,}" if employees else "N/A"
 
         st.markdown(f"""
         <div class="ov-grid">
           <div class="ov-item"><div class="ov-label">Market cap</div><div class="ov-val">{fmt_big(meta.get('market_cap'))}</div></div>
-          <div class="ov-item"><div class="ov-label">Revenue (TTM)</div><div class="ov-val">{fmt_big(rev_val)}</div></div>
-          <div class="ov-item"><div class="ov-label">Net income</div><div class="ov-val">{fmt_big(ni_val)}</div></div>
-          <div class="ov-item"><div class="ov-label">Operating CF</div><div class="ov-val">{fmt_big(ocf_val)}</div></div>
+          <div class="ov-item"><div class="ov-label">Revenue (TTM)</div><div class="ov-val">{fmt_big(float(rev_val.iloc[-1]) if not rev_val.empty else np.nan)}</div></div>
+          <div class="ov-item"><div class="ov-label">Net income</div><div class="ov-val">{fmt_big(float(ni_val.iloc[-1]) if not ni_val.empty else np.nan)}</div></div>
+          <div class="ov-item"><div class="ov-label">Operating CF</div><div class="ov-val">{fmt_big(float(ocf_val.iloc[-1]) if not ocf_val.empty else np.nan)}</div></div>
           <div class="ov-item"><div class="ov-label">Employees</div><div class="ov-val">{emp_str}</div></div>
           <div class="ov-item"><div class="ov-label">Country</div><div class="ov-val">{meta.get('country','N/A')}</div></div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ── 1-Year stock price chart ──────────────────────────────────────────
+        # 1-year chart
         st.markdown('<div class="section-header">1-year stock price</div>', unsafe_allow_html=True)
-        fig, ax = plt.subplots(figsize=(12, 3.5))
-        fig.patch.set_facecolor("#ffffff")
-        ax.set_facecolor("#ffffff")
-        closes = price_1y["Close"]
-        ax.plot(closes.index, closes.values, color="#7C3AED", linewidth=2)
-        ax.fill_between(closes.index, closes.values, closes.min(), alpha=0.08, color="#7C3AED")
-        ax.set_xlabel("Date", color="#9d8ec4", fontsize=10)
-        ax.set_ylabel("Price (USD)", color="#9d8ec4", fontsize=10)
-        ax.tick_params(colors="#9d8ec4")
-        ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("${x:,.0f}"))
-        for spine in ax.spines.values(): spine.set_edgecolor("#e2dff0")
-        ax.grid(axis="y", color="#e2dff0", linewidth=0.5)
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
+        draw_price_chart(price_1y, ticker_symbol)
 
-        # ── Profitability ratios ───────────────────────────────────────────────
+        # Profitability ratios
         st.markdown('<div class="section-header">Profitability ratios</div>', unsafe_allow_html=True)
         ly = prof_df.columns[-1]
 
@@ -493,12 +848,12 @@ if analyse:
             try: return float(df.loc[row, yr])
             except: return np.nan
 
-        gm  = pv(prof_df, "Gross Margin",      ly)
-        om  = pv(prof_df, "Operating Margin",   ly)
-        nm  = pv(prof_df, "Net Margin",         ly)
-        roa = pv(prof_df, "Return On Assets",   ly)
-        roe = pv(prof_df, "Return On Equity",   ly)
-        eps = pv(prof_df, "Earnings Per Share",  ly)
+        gm  = pv(prof_df, "Gross Margin",     ly)
+        om  = pv(prof_df, "Operating Margin",  ly)
+        nm  = pv(prof_df, "Net Margin",        ly)
+        roa = pv(prof_df, "Return On Assets",  ly)
+        roe = pv(prof_df, "Return On Equity",  ly)
+        eps = pv(prof_df, "Earnings Per Share", ly)
 
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -512,7 +867,7 @@ if analyse:
             st.markdown(card_html("EPS",              f"${fmt_num(eps)}" if pd.notna(eps) else "N/A",
                                   "Diluted earnings per share",   "#BA7517"), unsafe_allow_html=True)
 
-        # ── Liquidity ratios ───────────────────────────────────────────────────
+        # Liquidity ratios
         st.markdown('<div class="section-header">Liquidity ratios</div>', unsafe_allow_html=True)
         lly = liq_ratios.columns[-1]
         cr = float(liq_ratios.loc["Current Ratio", lly]) if "Current Ratio" in liq_ratios.index else np.nan
@@ -523,11 +878,11 @@ if analyse:
         with c1:
             st.markdown(card_html("Current ratio", fmt_num(cr), "Current assets / liabilities", "#1D9E75", quality(cr, 1.0, 2.0)), unsafe_allow_html=True)
         with c2:
-            st.markdown(card_html("Quick ratio",   fmt_num(qr), "(Assets − inventory) / liab", "#185FA5", quality(qr, 0.8, 1.5)), unsafe_allow_html=True)
+            st.markdown(card_html("Quick ratio",   fmt_num(qr), "(Assets − inventory) / liab",  "#185FA5", quality(qr, 0.8, 1.5)), unsafe_allow_html=True)
         with c3:
-            st.markdown(card_html("Cash ratio",    fmt_num(ar), "Cash / current liabilities",  "#534AB7", quality(ar, 0.2, 0.5)), unsafe_allow_html=True)
+            st.markdown(card_html("Cash ratio",    fmt_num(ar), "Cash / current liabilities",   "#534AB7", quality(ar, 0.2, 0.5)), unsafe_allow_html=True)
 
-        # ── Additional ratios ─────────────────────────────────────────────────
+        # Additional ratios
         st.markdown('<div class="section-header">Additional ratios</div>', unsafe_allow_html=True)
         aly = add_df.columns[-1]
         def av(row):
@@ -540,31 +895,30 @@ if analyse:
 
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.markdown(card_html("P/E ratio",          fmt_num(pe),  "Price / earnings",        "#BA7517"), unsafe_allow_html=True)
+            st.markdown(card_html("P/E ratio",        fmt_num(pe),  "Price / earnings",        "#BA7517"), unsafe_allow_html=True)
         with c2:
-            st.markdown(card_html("Div payout ratio",   fmt_pct(dpr), "Dividends / net income",  "#D4537E"), unsafe_allow_html=True)
+            st.markdown(card_html("Div payout ratio", fmt_pct(dpr), "Dividends / net income",  "#D4537E"), unsafe_allow_html=True)
         with c3:
-            st.markdown(card_html("Debt-to-equity",     fmt_num(dte), "Total debt / equity",     "#D85A30",
+            st.markdown(card_html("Debt-to-equity",   fmt_num(dte), "Total debt / equity",     "#D85A30",
                                   quality(2-dte if pd.notna(dte) else np.nan, 0, 1)), unsafe_allow_html=True)
         with c4:
-            st.markdown(card_html("Sust. growth rate",  fmt_pct(sgr), "ROE × retention ratio",   "#1D9E75",
+            st.markdown(card_html("Sust. growth rate",fmt_pct(sgr), "ROE × retention ratio",   "#1D9E75",
                                   quality(sgr, 0.05, 0.12)), unsafe_allow_html=True)
 
-        # ── CAPM ──────────────────────────────────────────────────────────────
+        # CAPM
         st.markdown('<div class="section-header">CAPM & cost of equity</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         beta_q = "good" if pd.notna(capm['beta']) and capm['beta'] < 0.8 else \
                  "warn" if pd.notna(capm['beta']) and capm['beta'] < 1.5 else "bad"
         with c1:
-            st.markdown(card_html("Beta",            fmt_num(capm['beta']),          "Market sensitivity",         "#534AB7", beta_q), unsafe_allow_html=True)
+            st.markdown(card_html("Beta",            fmt_num(capm['beta']),           "Market sensitivity",    "#534AB7", beta_q), unsafe_allow_html=True)
         with c2:
-            st.markdown(card_html("Risk-free rate",  fmt_pct(capm['risk_free_rate']),"10Y US Treasury",            "#185FA5"), unsafe_allow_html=True)
+            st.markdown(card_html("Risk-free rate",  fmt_pct(capm['risk_free_rate']), "10Y US Treasury",       "#185FA5"), unsafe_allow_html=True)
         with c3:
-            st.markdown(card_html("Market return",   fmt_pct(capm['market_return']), "S&P 500 10Y avg",            "#1D9E75"), unsafe_allow_html=True)
+            st.markdown(card_html("Market return",   fmt_pct(capm['market_return']),  "S&P 500 10Y avg",       "#1D9E75"), unsafe_allow_html=True)
         with c4:
-            st.markdown(card_html("Expected return", fmt_pct(capm['expected_return']),"Re = Rf + β(Rm − Rf)",      "#D85A30"), unsafe_allow_html=True)
+            st.markdown(card_html("Expected return", fmt_pct(capm['expected_return']),"Re = Rf + β(Rm − Rf)", "#D85A30"), unsafe_allow_html=True)
 
-        # Regression scatter
         with st.expander("Show beta regression plot"):
             ret_df = pd.DataFrame()
             try:
@@ -594,7 +948,7 @@ if analyse:
                 st.pyplot(fig2)
                 plt.close()
 
-        # ── FCF ───────────────────────────────────────────────────────────────
+        # FCF
         st.markdown('<div class="section-header">Free cash flow</div>', unsafe_allow_html=True)
         fcf_row = fcf_df.loc["Free Cash Flow"] if "Free Cash Flow" in fcf_df.index else pd.Series()
         if not fcf_row.empty:
@@ -623,22 +977,21 @@ if analyse:
             capex_latest = get_row(cashflow, ["Capital Expenditure","Capital Expenditures"]).dropna()
             st.markdown(card_html("CapEx", fmt_big(float(capex_latest.iloc[-1]) if not capex_latest.empty else np.nan), "Capital expenditures", "#D85A30"), unsafe_allow_html=True)
 
-        # ── WACC & DCF ────────────────────────────────────────────────────────
+        # WACC & DCF
         st.markdown('<div class="section-header">WACC & DCF valuation</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.markdown(card_html("WACC",          fmt_pct(wacc_d['wacc']),         "Weighted avg cost of capital", "#534AB7"), unsafe_allow_html=True)
+            st.markdown(card_html("WACC",         fmt_pct(wacc_d['wacc']),         "Weighted avg cost of capital", "#534AB7"), unsafe_allow_html=True)
         with c2:
-            st.markdown(card_html("Cost of debt",  fmt_pct(wacc_d['cost_of_debt']), "Interest / total debt",        "#D85A30"), unsafe_allow_html=True)
+            st.markdown(card_html("Cost of debt", fmt_pct(wacc_d['cost_of_debt']), "Interest / total debt",        "#D85A30"), unsafe_allow_html=True)
         with c3:
-            st.markdown(card_html("Tax rate",      fmt_pct(wacc_d['tax_rate']),     "Effective tax rate",           "#BA7517"), unsafe_allow_html=True)
+            st.markdown(card_html("Tax rate",     fmt_pct(wacc_d['tax_rate']),     "Effective tax rate",           "#BA7517"), unsafe_allow_html=True)
         with c4:
-            st.markdown(card_html("Firm value",    fmt_big(dcf_d['firm_value']),    "Sum of discounted FCFs",       "#1D9E75"), unsafe_allow_html=True)
+            st.markdown(card_html("Firm value",   fmt_big(dcf_d['firm_value']),    "Sum of discounted FCFs",       "#1D9E75"), unsafe_allow_html=True)
 
-        # Valuation bar
         if pd.notna(ip) and pd.notna(cp):
-            bar_w    = min(max((upside + 50) / 100 * 100, 2), 100)
-            bar_col  = "#15803d" if upside >= 0 else "#b91c1c"
+            bar_w   = min(max((upside + 50) / 100 * 100, 2), 100)
+            bar_col = "#15803d" if upside >= 0 else "#b91c1c"
             upside_str = f"{'+' if upside>=0 else ''}{upside:.1f}%"
             st.markdown(f"""
             <div class="val-section">

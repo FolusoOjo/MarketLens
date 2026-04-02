@@ -10,18 +10,17 @@ pd.options.display.float_format = '{:,.2f}'.format
 
 st.set_page_config(page_title="Financial Analytics Dashboard", layout="wide")
 
-# ── Global styles — Soft Purple & Slate fintech theme ─────────────────────────
+# ── Global styles ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Page background — light warm slate */
-[data-testid="stAppViewContainer"] { background: #f4f3f8; }
+/* Page background */
+[data-testid="stAppViewContainer"] { background: #0f1117; }
 [data-testid="stHeader"] { background: transparent; }
-[data-testid="stSidebar"] { background: #eeecf6; }
 
 /* Metric card */
 .fin-card {
-    background: #ffffff;
-    border: 1px solid #e2dff0;
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
     border-radius: 12px;
     padding: 18px 20px;
     margin-bottom: 12px;
@@ -34,48 +33,47 @@ st.markdown("""
     top: 0; left: 0;
     width: 4px; height: 100%;
     border-radius: 4px 0 0 4px;
-    background: var(--accent, #7C3AED);
+    background: var(--accent, #534AB7);
 }
 .fin-card .label {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #9d8ec4;
+    color: #6b7280;
     margin-bottom: 6px;
 }
 .fin-card .value {
     font-size: 22px;
-    font-weight: 700;
-    color: #1e1b4b;
+    font-weight: 600;
+    color: #f0f0f0;
     line-height: 1.2;
 }
 .fin-card .sub {
     font-size: 11px;
-    color: #b8afd6;
+    color: #4b5563;
     margin-top: 4px;
 }
-.fin-card.good  .value { color: #15803d; }
-.fin-card.warn  .value { color: #b45309; }
-.fin-card.bad   .value { color: #b91c1c; }
+.fin-card.good  .value { color: #4ade80; }
+.fin-card.warn  .value { color: #fbbf24; }
+.fin-card.bad   .value { color: #f87171; }
 
 /* Section header */
 .section-header {
     font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.09em;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #7C3AED;
-    border-bottom: 2px solid #e2dff0;
+    color: #6b7280;
+    border-bottom: 1px solid #2a2d3a;
     padding-bottom: 8px;
-    margin: 28px 0 14px;
+    margin: 24px 0 14px;
 }
 
 /* Company header */
 .company-header {
-    background: #ffffff;
-    border: 1px solid #e2dff0;
-    border-top: 4px solid #7C3AED;
+    background: linear-gradient(135deg, #1a1d27, #1e2235);
+    border: 1px solid #2a2d3a;
     border-radius: 16px;
     padding: 24px 28px;
     margin-bottom: 24px;
@@ -85,12 +83,12 @@ st.markdown("""
     flex-wrap: wrap;
     gap: 16px;
 }
-.company-name { font-size: 26px; font-weight: 700; color: #1e1b4b; }
-.company-sub  { font-size: 13px; color: #9d8ec4; margin-top: 4px; }
-.price-big    { font-size: 32px; font-weight: 700; color: #1e1b4b; text-align: right; }
-.price-change { font-size: 14px; font-weight: 600; text-align: right; margin-top: 2px; }
-.price-up     { color: #15803d; }
-.price-down   { color: #b91c1c; }
+.company-name { font-size: 26px; font-weight: 700; color: #f0f0f0; }
+.company-sub  { font-size: 13px; color: #6b7280; margin-top: 4px; }
+.price-big    { font-size: 32px; font-weight: 700; color: #f0f0f0; text-align: right; }
+.price-change { font-size: 14px; font-weight: 500; text-align: right; margin-top: 2px; }
+.price-up     { color: #4ade80; }
+.price-down   { color: #f87171; }
 .rec-badge {
     display: inline-block;
     font-size: 11px;
@@ -100,28 +98,28 @@ st.markdown("""
     margin-top: 8px;
     letter-spacing: 0.06em;
 }
-.rec-buy  { background: #dcfce7; color: #15803d; }
-.rec-hold { background: #fef3c7; color: #b45309; }
-.rec-sell { background: #fee2e2; color: #b91c1c; }
+.rec-buy  { background: #14532d; color: #4ade80; }
+.rec-hold { background: #451a03; color: #fbbf24; }
+.rec-sell { background: #450a0a; color: #f87171; }
 
 /* Overview grid */
 .ov-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
-.ov-item { background: #ffffff; border: 1px solid #e2dff0; border-radius: 10px; padding: 12px 14px; }
-.ov-label { font-size: 11px; color: #9d8ec4; margin-bottom: 4px; font-weight: 500; }
-.ov-val   { font-size: 14px; font-weight: 700; color: #1e1b4b; }
+.ov-item { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px; padding: 12px 14px; }
+.ov-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+.ov-val   { font-size: 14px; font-weight: 600; color: #e5e7eb; }
 
 /* Valuation bar */
 .val-section {
-    background: #ffffff;
-    border: 1px solid #e2dff0;
+    background: #1a1d27;
+    border: 1px solid #2a2d3a;
     border-radius: 12px;
     padding: 18px 20px;
     margin-bottom: 12px;
 }
 .val-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.val-lbl { font-size: 13px; color: #9d8ec4; }
-.val-num { font-size: 15px; font-weight: 700; color: #1e1b4b; }
-.bar-track { height: 6px; background: #e2dff0; border-radius: 4px; margin-top: 8px; }
+.val-lbl { font-size: 13px; color: #9ca3af; }
+.val-num { font-size: 15px; font-weight: 600; color: #f0f0f0; }
+.bar-track { height: 6px; background: #2a2d3a; border-radius: 4px; margin-top: 8px; }
 .bar-fill  { height: 6px; border-radius: 4px; }
 
 /* Hide default streamlit elements */
@@ -376,8 +374,8 @@ def dcf_analysis(meta, fcf_series, wacc, price_5y):
 
 st.markdown("""
 <div style='padding: 1rem 0 0.5rem;'>
-  <span style='font-size:28px; font-weight:700; color:#1e1b4b;'>Financial Analytics Dashboard</span><br>
-  <span style='font-size:13px; color:#9d8ec4;'>Enter any stock ticker to analyse ratios, CAPM, FCF, WACC & DCF valuation.</span>
+  <span style='font-size:28px; font-weight:700; color:#f0f0f0;'>Financial Analytics Dashboard</span><br>
+  <span style='font-size:13px; color:#6b7280;'>Enter any stock ticker to analyse ratios, CAPM, FCF, WACC & DCF valuation.</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -470,17 +468,17 @@ if analyse:
         # ── 1-Year stock price chart ──────────────────────────────────────────
         st.markdown('<div class="section-header">1-year stock price</div>', unsafe_allow_html=True)
         fig, ax = plt.subplots(figsize=(12, 3.5))
-        fig.patch.set_facecolor("#ffffff")
-        ax.set_facecolor("#ffffff")
+        fig.patch.set_facecolor("#1a1d27")
+        ax.set_facecolor("#1a1d27")
         closes = price_1y["Close"]
-        ax.plot(closes.index, closes.values, color="#7C3AED", linewidth=2)
-        ax.fill_between(closes.index, closes.values, closes.min(), alpha=0.08, color="#7C3AED")
-        ax.set_xlabel("Date", color="#9d8ec4", fontsize=10)
-        ax.set_ylabel("Price (USD)", color="#9d8ec4", fontsize=10)
-        ax.tick_params(colors="#9d8ec4")
+        ax.plot(closes.index, closes.values, color="#818cf8", linewidth=1.5)
+        ax.fill_between(closes.index, closes.values, closes.min(), alpha=0.15, color="#818cf8")
+        ax.set_xlabel("Date", color="#6b7280", fontsize=10)
+        ax.set_ylabel("Price (USD)", color="#6b7280", fontsize=10)
+        ax.tick_params(colors="#6b7280")
         ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("${x:,.0f}"))
-        for spine in ax.spines.values(): spine.set_edgecolor("#e2dff0")
-        ax.grid(axis="y", color="#e2dff0", linewidth=0.5)
+        for spine in ax.spines.values(): spine.set_edgecolor("#2a2d3a")
+        ax.grid(axis="y", color="#2a2d3a", linewidth=0.5)
         plt.tight_layout()
         st.pyplot(fig)
         plt.close()
@@ -578,18 +576,18 @@ if analyse:
                 pass
             if not ret_df.empty:
                 fig2, ax2 = plt.subplots(figsize=(7, 4))
-                fig2.patch.set_facecolor("#ffffff")
-                ax2.set_facecolor("#ffffff")
-                ax2.scatter(ret_df["Market"], ret_df["Stock"], alpha=0.25, s=6, color="#a78bfa")
+                fig2.patch.set_facecolor("#1a1d27")
+                ax2.set_facecolor("#1a1d27")
+                ax2.scatter(ret_df["Market"], ret_df["Stock"], alpha=0.2, s=6, color="#818cf8")
                 xs = np.linspace(ret_df["Market"].min(), ret_df["Market"].max(), 100)
-                ax2.plot(xs, capm["slope"]*xs, color="#7C3AED", linewidth=2,
+                ax2.plot(xs, capm["slope"]*xs, color="#f87171", linewidth=1.5,
                          label=f"β={capm['slope']:.3f}  R²={capm['r_squared']:.3f}")
-                ax2.set_xlabel("S&P 500 daily return", color="#9d8ec4", fontsize=10)
-                ax2.set_ylabel(f"{ticker_symbol} daily return", color="#9d8ec4", fontsize=10)
-                ax2.tick_params(colors="#9d8ec4")
-                for sp in ax2.spines.values(): sp.set_edgecolor("#e2dff0")
-                ax2.grid(color="#e2dff0", linewidth=0.5)
-                ax2.legend(fontsize=9, facecolor="#ffffff", labelcolor="#1e1b4b")
+                ax2.set_xlabel("S&P 500 daily return", color="#6b7280", fontsize=10)
+                ax2.set_ylabel(f"{ticker_symbol} daily return", color="#6b7280", fontsize=10)
+                ax2.tick_params(colors="#6b7280")
+                for sp in ax2.spines.values(): sp.set_edgecolor("#2a2d3a")
+                ax2.grid(color="#2a2d3a", linewidth=0.5)
+                ax2.legend(fontsize=9, facecolor="#1a1d27", labelcolor="#e5e7eb")
                 plt.tight_layout()
                 st.pyplot(fig2)
                 plt.close()
@@ -599,15 +597,15 @@ if analyse:
         fcf_row = fcf_df.loc["Free Cash Flow"] if "Free Cash Flow" in fcf_df.index else pd.Series()
         if not fcf_row.empty:
             fig3, ax3 = plt.subplots(figsize=(8, 3))
-            fig3.patch.set_facecolor("#ffffff")
-            ax3.set_facecolor("#ffffff")
-            colors = ["#7C3AED" if v >= 0 else "#b91c1c" for v in fcf_row.values]
-            ax3.bar(fcf_row.index, fcf_row.values / 1e9, color=colors, width=0.5, edgecolor="#e2dff0")
-            ax3.set_ylabel("USD (Billions)", color="#9d8ec4", fontsize=10)
-            ax3.tick_params(colors="#9d8ec4")
+            fig3.patch.set_facecolor("#1a1d27")
+            ax3.set_facecolor("#1a1d27")
+            colors = ["#4ade80" if v >= 0 else "#f87171" for v in fcf_row.values]
+            ax3.bar(fcf_row.index, fcf_row.values / 1e9, color=colors, width=0.5, edgecolor="#2a2d3a")
+            ax3.set_ylabel("USD (Billions)", color="#6b7280", fontsize=10)
+            ax3.tick_params(colors="#6b7280")
             ax3.yaxis.set_major_formatter(mticker.StrMethodFormatter("${x:.0f}B"))
-            for sp in ax3.spines.values(): sp.set_edgecolor("#e2dff0")
-            ax3.grid(axis="y", color="#e2dff0", linewidth=0.5)
+            for sp in ax3.spines.values(): sp.set_edgecolor("#2a2d3a")
+            ax3.grid(axis="y", color="#2a2d3a", linewidth=0.5)
             plt.tight_layout()
             st.pyplot(fig3)
             plt.close()
@@ -638,7 +636,7 @@ if analyse:
         # Valuation bar
         if pd.notna(ip) and pd.notna(cp):
             bar_w    = min(max((upside + 50) / 100 * 100, 2), 100)
-            bar_col  = "#15803d" if upside >= 0 else "#b91c1c"
+            bar_col  = "#4ade80" if upside >= 0 else "#f87171"
             upside_str = f"{'+' if upside>=0 else ''}{upside:.1f}%"
             st.markdown(f"""
             <div class="val-section">
