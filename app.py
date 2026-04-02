@@ -784,7 +784,13 @@ if analyse:
             """, unsafe_allow_html=True)
 
     except Exception as e:
-        if "Too Many Requests" in str(e) or "Rate limited" in str(e):
-            st.error("Yahoo Finance is rate-limiting the app. Wait a moment and try again.")
+        if "Too Many Requests" in str(e) or "Rate limited" in str(e) or "429" in str(e):
+            st.warning("⚠️ Yahoo Finance is rate-limiting this server. Retrying in 5 seconds...")
+            time.sleep(5)
+            try:
+                st.cache_data.clear()
+                st.rerun()
+            except Exception:
+                st.error("Still rate-limited. Please wait 30 seconds and click Analyse again.")
         else:
             st.error(f"Could not analyse {ticker_symbol}: {e}")
