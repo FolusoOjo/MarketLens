@@ -6,3 +6,4 @@ matplotlib==3.10.3
 seaborn==0.13.2
 scipy==1.15.3
 scikit-learn==1.6.1
+curl-cffi

@@ -11,21 +11,10 @@ import requests
 pd.options.display.float_format = '{:,.2f}'.format
 
 # ── Spoof browser User-Agent to avoid Yahoo Finance rate limiting on cloud ─────
-_YF_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
+from curl_cffi import requests as curl_requests
 
 def _make_session():
-    s = requests.Session()
-    s.headers.update(_YF_HEADERS)
-    return s
-
+    return curl_requests.Session(impersonate="chrome")
 st.set_page_config(page_title="Financial Analytics Dashboard", layout="wide")
 
 # ── Global styles — Soft Purple & Slate fintech theme ─────────────────────────
