@@ -6,8 +6,25 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import scipy.stats as stats
 import time
+import requests
 
 pd.options.display.float_format = '{:,.2f}'.format
+
+# ── Spoof browser User-Agent to avoid Yahoo Finance rate limiting on cloud ─────
+_YF_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
+
+def _make_session():
+    s = requests.Session()
+    s.headers.update(_YF_HEADERS)
+    return s
 
 st.set_page_config(page_title="Financial Analytics Dashboard", layout="wide")
 
@@ -193,6 +210,10 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Flatten MultiIndex columns produced by newer yfinance versions."""
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
+    df = df.loc[:, ~df.columns.duplicated()]
+    for col in df.columns:
+        if isinstance(df[col], pd.DataFrame):
+            df[col] = df[col].iloc[:, 0]
     return df
 
 
@@ -200,20 +221,10 @@ def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_data(sym):
-    t = yf.Ticker(sym)
-    h5 = t.history(period="5y")
-    h1 = t.history(period="1y")
-    # Flatten multi-level columns if present (yfinance >= 0.2.x)
-    h5 = flatten_columns(h5)
-    h1 = flatten_columns(h1)
-    return t.balance_sheet, t.financials, t.cashflow, h5, h1
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_data(sym):
     for attempt in range(3):
         try:
-            t = yf.Ticker(sym)
+            session = _make_session()
+            t = yf.Ticker(sym, session=session)
             h5 = t.history(period="5y")
             h1 = t.history(period="1y")
             h5 = flatten_columns(h5)
@@ -221,13 +232,15 @@ def fetch_data(sym):
             return t.balance_sheet, t.financials, t.cashflow, h5, h1
         except Exception as e:
             if attempt < 2:
-                time.sleep(2)
+                time.sleep(3)
             else:
                 raise e
 
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_meta(sym):
-    t = yf.Ticker(sym)
+    session = _make_session()
+    t = yf.Ticker(sym, session=session)
     mc, sh, name, sector, industry, country, employees = np.nan, np.nan, sym, "", "", "", None
     is_etf = False
     etf_extra = {}
@@ -270,11 +283,17 @@ def fetch_meta(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market():
-    market = yf.download("^GSPC", period="10y", auto_adjust=True, progress=False)
-    rf     = yf.download("^TNX",  period="5d",  auto_adjust=True, progress=False)
-    # Flatten multi-level columns if present (yfinance >= 0.2.x)
+    session = _make_session()
+    market = yf.download("^GSPC", period="10y", auto_adjust=True, progress=False,
+                         session=session, multi_level_index=False)
+    rf     = yf.download("^TNX",  period="5d",  auto_adjust=True, progress=False,
+                         session=session, multi_level_index=False)
     market = flatten_columns(market)
     rf     = flatten_columns(rf)
+    if isinstance(market.get("Close"), pd.DataFrame):
+        market["Close"] = market["Close"].iloc[:, 0]
+    if isinstance(rf.get("Close"), pd.DataFrame):
+        rf["Close"] = rf["Close"].iloc[:, 0]
     return market, rf
 
 
@@ -525,7 +544,7 @@ if analyse:
             st.info(f"**{ticker_symbol} is an ETF.** Financial statements are not available for funds — showing fund-specific metrics above instead.")
             st.stop()
 
-        # ── Stock branch (original flow) ──────────────────────────────────────
+        # ── Stock branch ──────────────────────────────────────────────────────
         if price_5y.empty:
             st.error("No price data found for this ticker.")
             st.stop()
