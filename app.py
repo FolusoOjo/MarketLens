@@ -264,6 +264,8 @@ def fetch_meta(sym):
             }
     except Exception:
         pass
+    if not name or name ==sym:
+        is_etf = False
     return {"market_cap": mc, "shares_outstanding": sh, "name": name,
             "sector": sector, "industry": industry, "country": country,
             "employees": employees, "is_etf": is_etf, "etf_extra": etf_extra}
@@ -456,7 +458,7 @@ if analyse:
         is_etf = meta.get("is_etf", False)
 
         # ── ETF branch ────────────────────────────────────────────────────────
-        if is_etf or (balance.empty and income.empty):
+        if is_etf or (balance.empty and income.empty and not price_5y.empty):
             ex = meta.get("etf_extra", {})
             cp = float(price_5y["Close"].dropna().iloc[-1]) if not price_5y.empty else np.nan
             prev_row = price_5y["Close"].dropna()
@@ -533,8 +535,8 @@ if analyse:
             st.stop()
 
         # ── Stock branch ──────────────────────────────────────────────────────
-        if price_5y.empty:
-            st.error("No price data found for this ticker.")
+        if price_5y.empty or balance.empty:
+            st.error("No financial data found. This may be an ETF or unsupported ticker. Try a stock like AAPL or MSFT.")
             st.stop()
 
         liq_df,  liq_ratios  = liquidity_analysis(balance)
