@@ -188,12 +188,24 @@ def quality(val, low, high):
     return "good" if val >= high else ("warn" if val >= low else "bad")
 
 
+def flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten MultiIndex columns produced by newer yfinance versions."""
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
+
 # ── Data fetching (cached) ─────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_data(sym):
     t = yf.Ticker(sym)
-    return t.balance_sheet, t.financials, t.cashflow, t.history(period="5y"), t.history(period="1y")
+    h5 = t.history(period="5y")
+    h1 = t.history(period="1y")
+    # Flatten multi-level columns if present (yfinance >= 0.2.x)
+    h5 = flatten_columns(h5)
+    h1 = flatten_columns(h1)
+    return t.balance_sheet, t.financials, t.cashflow, h5, h1
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -243,6 +255,9 @@ def fetch_meta(sym):
 def fetch_market():
     market = yf.download("^GSPC", period="10y", auto_adjust=True, progress=False)
     rf     = yf.download("^TNX",  period="5d",  auto_adjust=True, progress=False)
+    # Flatten multi-level columns if present (yfinance >= 0.2.x)
+    market = flatten_columns(market)
+    rf     = flatten_columns(rf)
     return market, rf
 
 
