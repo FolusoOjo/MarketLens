@@ -200,6 +200,8 @@ def fetch_data(sym):
 def fetch_meta(sym):
     t = yf.Ticker(sym)
     mc, sh, name, sector, industry, country, employees = np.nan, np.nan, sym, "", "", "", None
+    is_etf = False
+    etf_extra = {}
     try:
         f = t.fast_info
         mc = f.get("market_cap", np.nan)
@@ -215,10 +217,26 @@ def fetch_meta(sym):
         industry = info.get("industry", "")
         country  = info.get("country", "")
         employees= info.get("fullTimeEmployees", None)
+        if info.get("quoteType", "") in ("ETF", "MUTUALFUND") or \
+           (not sector and info.get("fundFamily")):
+            is_etf = True
+            etf_extra = {
+                "fund_family":   info.get("fundFamily", "N/A"),
+                "category":      info.get("category", "N/A"),
+                "expense_ratio": info.get("annualReportExpenseRatio",
+                                 info.get("totalExpenseRatio", np.nan)),
+                "nav":           info.get("navPrice", np.nan),
+                "aum":           info.get("totalAssets", np.nan),
+                "ytd_return":    info.get("ytdReturn", np.nan),
+                "three_year":    info.get("threeYearAverageReturn", np.nan),
+                "five_year":     info.get("fiveYearAverageReturn", np.nan),
+                "beta_3y":       info.get("beta3Year", np.nan),
+            }
     except Exception:
         pass
     return {"market_cap": mc, "shares_outstanding": sh, "name": name,
-            "sector": sector, "industry": industry, "country": country, "employees": employees}
+            "sector": sector, "industry": industry, "country": country,
+            "employees": employees, "is_etf": is_etf, "etf_extra": etf_extra}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -376,8 +394,8 @@ def dcf_analysis(meta, fcf_series, wacc, price_5y):
 
 st.markdown("""
 <div style='padding: 1rem 0 0.5rem;'>
-  <span style='font-size:28px; font-weight:700; color:#1e1b4b;'>Financial Analytics Dashboard</span><br>
-  <span style='font-size:13px; color:#9d8ec4;'>Enter any stock ticker to analyse ratios, CAPM, FCF, WACC & DCF valuation.</span>
+  <span style='font-size:28px; font-weight:700; color:#1e1b4b;'>MarketLens</span><br>
+  <span style='font-size:13px; color:#9d8ec4;'>Data-Driven Stock Valuation & Forecasting Platform.</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -396,8 +414,88 @@ if analyse:
             balance, income, cashflow, price_5y, price_1y = fetch_data(ticker_symbol)
             meta = fetch_meta(ticker_symbol)
 
-        if balance.empty or income.empty or cashflow.empty or price_5y.empty:
-            st.error("Some data is missing for this ticker. Try another company.")
+        is_etf = meta.get("is_etf", False)
+
+        # ── ETF branch ────────────────────────────────────────────────────────
+        if is_etf or (balance.empty and income.empty):
+            ex = meta.get("etf_extra", {})
+            cp = float(price_5y["Close"].dropna().iloc[-1]) if not price_5y.empty else np.nan
+            prev_row = price_5y["Close"].dropna()
+            change   = float(prev_row.iloc[-1] - prev_row.iloc[-2]) if len(prev_row) >= 2 else 0
+            chg_pct  = (change / float(prev_row.iloc[-2])) * 100 if len(prev_row) >= 2 else 0
+            chg_cls  = "price-up" if change >= 0 else "price-down"
+            chg_sign = "+" if change >= 0 else ""
+            name     = meta.get("name", ticker_symbol)
+
+            st.markdown(f"""
+            <div class="company-header">
+              <div>
+                <div class="company-name">{name}
+                  <span style='font-size:15px;font-weight:400;color:#9d8ec4;'>{ticker_symbol}</span>
+                </div>
+                <div class="company-sub">{ex.get('fund_family','N/A')} · {ex.get('category','N/A')}</div>
+                <span class="rec-badge" style="background:#ede9fe;color:#5b21b6;font-size:11px;font-weight:700;padding:3px 12px;border-radius:20px;margin-top:8px;display:inline-block;">ETF</span>
+              </div>
+              <div>
+                <div class="price-big">${cp:,.2f}</div>
+                <div class="price-change {chg_cls}">{chg_sign}{change:.2f} ({chg_sign}{chg_pct:.2f}%)</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-header">Fund overview</div>', unsafe_allow_html=True)
+            aum_v  = ex.get('aum', np.nan)
+            nav_v  = ex.get('nav', np.nan)
+            exp_v  = ex.get('expense_ratio', np.nan)
+            ytd_v  = ex.get('ytd_return', np.nan)
+            t3_v   = ex.get('three_year', np.nan)
+            t5_v   = ex.get('five_year', np.nan)
+            st.markdown(f"""
+            <div class="ov-grid">
+              <div class="ov-item"><div class="ov-label">AUM</div><div class="ov-val">{fmt_big(aum_v)}</div></div>
+              <div class="ov-item"><div class="ov-label">NAV</div><div class="ov-val">{fmt_big(nav_v) if pd.notna(nav_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">Expense ratio</div><div class="ov-val">{fmt_pct(exp_v) if pd.notna(exp_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">YTD return</div><div class="ov-val">{fmt_pct(ytd_v) if pd.notna(ytd_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">3-year avg return</div><div class="ov-val">{fmt_pct(t3_v) if pd.notna(t3_v) else 'N/A'}</div></div>
+              <div class="ov-item"><div class="ov-label">5-year avg return</div><div class="ov-val">{fmt_pct(t5_v) if pd.notna(t5_v) else 'N/A'}</div></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown('<div class="section-header">1-year price</div>', unsafe_allow_html=True)
+            fig, ax = plt.subplots(figsize=(12, 3.5))
+            fig.patch.set_facecolor("#ffffff"); ax.set_facecolor("#ffffff")
+            closes = price_1y["Close"]
+            ax.plot(closes.index, closes.values, color="#7C3AED", linewidth=2)
+            ax.fill_between(closes.index, closes.values, closes.min(), alpha=0.08, color="#7C3AED")
+            ax.set_xlabel("Date", color="#9d8ec4", fontsize=10)
+            ax.set_ylabel("Price (USD)", color="#9d8ec4", fontsize=10)
+            ax.tick_params(colors="#9d8ec4")
+            ax.yaxis.set_major_formatter(mticker.StrMethodFormatter("${x:,.0f}"))
+            for spine in ax.spines.values(): spine.set_edgecolor("#e2dff0")
+            ax.grid(axis="y", color="#e2dff0", linewidth=0.5)
+            plt.tight_layout(); st.pyplot(fig); plt.close()
+
+            capm_etf = capm_analysis(price_5y)
+            st.markdown('<div class="section-header">CAPM & risk</div>', unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
+            beta_3y = ex.get('beta_3y', np.nan)
+            beta_q  = "good" if pd.notna(capm_etf['beta']) and capm_etf['beta'] < 0.8 else \
+                      "warn" if pd.notna(capm_etf['beta']) and capm_etf['beta'] < 1.5 else "bad"
+            with c1:
+                st.markdown(card_html("Beta (3Y fund)", fmt_num(beta_3y), "Reported by fund", "#534AB7", beta_q), unsafe_allow_html=True)
+            with c2:
+                st.markdown(card_html("Beta (calc)", fmt_num(capm_etf['beta']), "Regression vs S&P 500", "#7C3AED", beta_q), unsafe_allow_html=True)
+            with c3:
+                st.markdown(card_html("Risk-free rate", fmt_pct(capm_etf['risk_free_rate']), "10Y US Treasury", "#185FA5"), unsafe_allow_html=True)
+            with c4:
+                st.markdown(card_html("Expected return", fmt_pct(capm_etf['expected_return']), "Re = Rf + β(Rm − Rf)", "#D85A30"), unsafe_allow_html=True)
+
+            st.info(f"**{ticker_symbol} is an ETF.** Financial statements are not available for funds — showing fund-specific metrics above instead.")
+            st.stop()
+
+        # ── Stock branch (original flow) ──────────────────────────────────────
+        if price_5y.empty:
+            st.error("No price data found for this ticker.")
             st.stop()
 
         liq_df,  liq_ratios  = liquidity_analysis(balance)
@@ -436,7 +534,7 @@ if analyse:
               <span style='font-size:15px;font-weight:400;color:#6b7280;'>{ticker_symbol}</span>
             </div>
             <div class="company-sub">{sector} · {industry}</div>
-            <span class="rec-badge {rec_cls}">{rec}</span>
+            <span class="rec-badge" style="background:#ede9fe;color:#5b21b6;">STOCK</span>
           </div>
           <div>
             <div class="price-big">${cp:,.2f}</div>
