@@ -6,11 +6,48 @@ import plotly.graph_objects as go
 import scipy.stats as stats
 import requests
 from curl_cffi import requests as curl_requests
+try:
+    from groq import Groq as _GroqClient
+except Exception:
+    _GroqClient = None
 
 pd.options.display.float_format = '{:,.2f}'.format
 
-FMP_API_KEY = "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1"
-FMP_BASE    = "https://financialmodelingprep.com/stable"
+# ── API Key Rotation — cycles through keys when one hits daily limit ──────────
+FMP_KEYS = [
+    "ExDbZ2hOn1W8RSnDqoXyk01gZqklHRek",  # account 2
+    "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1",  # account 1
+    "1ZySs1wCw6vvywwRcaTZksTaGMm0M2XJ",  # account 3
+]
+FMP_BASE = "https://financialmodelingprep.com/stable"
+
+def get_fmp_key():
+    """Returns the first working API key by testing each one."""
+    for key in FMP_KEYS:
+        try:
+            test = requests.get(
+                f"{FMP_BASE}/profile?symbol=AAPL&apikey={key}",
+                timeout=8
+            )
+            if test.status_code == 200:
+                data = test.json()
+                if isinstance(data, list) and len(data) > 0:
+                    return key
+        except Exception:
+            pass
+    return FMP_KEYS[0]  # fallback to first key
+
+# Cache the working key for 1 hour to avoid wasting calls on key checks
+import functools, time as _time
+_key_cache = {"key": None, "ts": 0}
+
+def FMP_API_KEY():
+    global _key_cache
+    if _key_cache["key"] and (_time.time() - _key_cache["ts"]) < 3600:
+        return _key_cache["key"]
+    key = get_fmp_key()
+    _key_cache = {"key": key, "ts": _time.time()}
+    return key
 
 st.set_page_config(page_title="MarketLens", layout="wide", initial_sidebar_state="collapsed")
 
@@ -132,7 +169,20 @@ input:focus,
 input::placeholder,
 [data-testid="stTextInput"] input::placeholder {{ color: {placeholder_color} !important; }}
 
-/* ── Button ── */
+/* ── Back button ── */
+button[kind="secondary"],
+[data-testid="stButton"]:has(button[data-testid*="back"]) > button {{
+    background: transparent !important;
+    color: {T["text_muted"]} !important;
+    border: 1px solid {T["card_border"]} !important;
+    border-radius: 10px !important;
+    font-size: 13px !important;
+    height: 38px !important;
+    padding: 0 16px !important;
+    margin-bottom: 16px !important;
+}}
+
+/* ── Analyse Button ── */
 [data-testid="stButton"] > button {{
     background: linear-gradient(135deg, #7c3aed, #6366f1) !important;
     color: #ffffff !important;
@@ -332,6 +382,38 @@ input::placeholder,
 
 #MainMenu, footer, header {{ visibility: hidden; }}
 div[data-testid="column"] {{ padding: 0 5px; }}
+
+/* ── Mobile responsiveness ── */
+@media (max-width: 768px) {{
+    .hero-title {{ font-size: 38px; letter-spacing: -0.5px; }}
+    .hero-sub {{ font-size: 11px; }}
+    .co-card {{ padding: 18px 16px; flex-direction: column; }}
+    .co-name {{ font-size: 20px; }}
+    .price-val {{ font-size: 26px; text-align: left; }}
+    .price-chg {{ text-align: left; }}
+    .ov {{ grid-template-columns: repeat(2,1fr); gap: 8px; }}
+    .ov-v {{ font-size: 15px; }}
+    .ov-l {{ font-size: 10px; }}
+    .idx-card {{ padding: 14px 12px; }}
+    .idx-price {{ font-size: 20px; }}
+    .idx-name {{ font-size: 9px; }}
+    .idx-desc {{ font-size: 11px; }}
+    .mc-val {{ font-size: 20px; }}
+    .mc-lbl {{ font-size: 10px; }}
+    .mc-sub {{ font-size: 11px; }}
+    .news-title {{ font-size: 13px; line-height: 1.5; }}
+    .sec-ttl {{ font-size: 10px; }}
+    .about-grid {{ grid-template-columns: 1fr !important; }}
+    .peers-table {{ overflow-x: auto; display: block; white-space: nowrap; }}
+    .peers-table th, .peers-table td {{ padding: 8px 10px; font-size: 11px; }}
+    .mover-card {{ padding: 10px 12px; }}
+    .mover-sym {{ font-size: 13px; }}
+    .val-c {{ padding: 18px 16px; }}
+    .val-n {{ font-size: 17px; }}
+    div[data-testid="column"] {{ padding: 0 3px; }}
+    [data-testid="stMainBlockContainer"] {{ padding-left: 10px !important; padding-right: 10px !important; }}
+    [data-testid="stButton"] > button {{ height: 46px !important; font-size: 13px !important; padding: 0 16px !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -354,10 +436,14 @@ def fmt_num(n, dec=2):
     return f"{n:.{dec}f}"
 
 def mcard(label, value, sub="", accent="#7c3aed", q=""):
+    display_val = value
+    if value in ("N/A", "nan", "$nan", "$N/A"):
+        display_val = "—"
+        q = ""  # no colour coding for missing
     return f"""<div class="mc {q}">
     <div class="mc-bar" style="background:{accent}"></div>
     <div class="mc-lbl">{label}</div>
-    <div class="mc-val">{value}</div>
+    <div class="mc-val">{display_val}</div>
     {"<div class='mc-sub'>" + sub + "</div>" if sub else ""}
 </div>"""
 
@@ -465,10 +551,11 @@ def chart_revenue_earnings(income):
     return fig
 
 def chart_peers(peers_data, current_sym):
-    """Horizontal bar chart comparing peers on key metrics."""
-    syms = [d["symbol"] for d in peers_data]
-    gms  = [d.get("grossMargin", 0)*100 for d in peers_data]
-    pes  = [min(d.get("pe", 0) or 0, 80) for d in peers_data]  # cap at 80 for display
+    """Horizontal bar chart comparing peers on key metrics - sorted high to low."""
+    # Sort by gross margin descending
+    sorted_data = sorted(peers_data, key=lambda d: d.get("grossMargin") or 0)
+    syms = [d["symbol"] for d in sorted_data]
+    gms  = [(d.get("grossMargin") or 0)*100 for d in sorted_data]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -489,12 +576,23 @@ def chart_peers(peers_data, current_sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fmp_get(endpoint):
-    url = f"{FMP_BASE}/{endpoint}&apikey={FMP_API_KEY}"
+    key = FMP_API_KEY()
+    url = f"{FMP_BASE}/{endpoint}&apikey={key}"
     try:
         r = requests.get(url, timeout=15)
         if r.status_code == 200:
             d = r.json()
-            return [] if isinstance(d, dict) and "Error Message" in d else d
+            if isinstance(d, dict) and "Error Message" in d:
+                # Try other key
+                for k in FMP_KEYS:
+                    if k != key:
+                        r2 = requests.get(f"{FMP_BASE}/{endpoint}&apikey={k}", timeout=15)
+                        if r2.status_code == 200:
+                            d2 = r2.json()
+                            if not (isinstance(d2, dict) and "Error Message" in d2):
+                                return d2
+                return []
+            return d
     except Exception:
         pass
     return []
@@ -502,10 +600,11 @@ def fmp_get(endpoint):
 @st.cache_data(ttl=60, show_spinner=False)
 def fmp_search(q):
     """Search tickers by name or symbol - tries multiple endpoints."""
+    _k = FMP_API_KEY()
     endpoints = [
-        f"{FMP_BASE}/search?query={q}&limit=6&apikey={FMP_API_KEY}",
-        f"https://financialmodelingprep.com/api/v3/search?query={q}&limit=6&apikey={FMP_API_KEY}",
-        f"https://financialmodelingprep.com/api/v3/search-ticker?query={q}&limit=6&apikey={FMP_API_KEY}",
+        f"{FMP_BASE}/search?query={q}&limit=6&apikey={_k}",
+        f"https://financialmodelingprep.com/api/v3/search?query={q}&limit=6&apikey={_k}",
+        f"https://financialmodelingprep.com/api/v3/search-ticker?query={q}&limit=6&apikey={_k}",
     ]
     for url in endpoints:
         try:
@@ -564,7 +663,7 @@ def fetch_news(sym):
     # Fallback to FMP
     try:
         r = requests.get(
-            f"https://financialmodelingprep.com/api/v3/stock_news?tickers={sym}&limit=5&apikey={FMP_API_KEY}",
+            f"https://financialmodelingprep.com/api/v3/stock_news?tickers={sym}&limit=5&apikey={FMP_API_KEY()}",
             timeout=10
         )
         if r.status_code == 200:
@@ -576,12 +675,32 @@ def fetch_news(sym):
     return []
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_etf_holdings(sym):
+    """Fetch ETF holdings from FMP."""
+    _k = FMP_API_KEY()
+    urls = [
+        f"https://financialmodelingprep.com/api/v3/etf-holder/{sym}?apikey={_k}",
+        f"https://financialmodelingprep.com/stable/etf-holder?symbol={sym}&apikey={_k}",
+    ]
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and data:
+                    return data
+        except Exception:
+            pass
+    return []
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_peers(sym):
     """Fetch stock peers — tries API first, then builds from sector/industry."""
     # Try FMP peers API
+    _k = FMP_API_KEY()
     urls = [
-        f"https://financialmodelingprep.com/api/v4/stock_peers?symbol={sym}&apikey={FMP_API_KEY}",
-        f"https://financialmodelingprep.com/stable/peers?symbol={sym}&apikey={FMP_API_KEY}",
+        f"https://financialmodelingprep.com/api/v4/stock_peers?symbol={sym}&apikey={_k}",
+        f"https://financialmodelingprep.com/stable/peers?symbol={sym}&apikey={_k}",
     ]
     for url in urls:
         try:
@@ -614,7 +733,7 @@ def fetch_peers(sym):
             screen_url = (
                 f"https://financialmodelingprep.com/api/v3/stock-screener"
                 f"?sector={requests.utils.quote(sector)}"
-                f"&exchange={exchange}&limit=10&apikey={FMP_API_KEY}"
+                f"&exchange={exchange}&limit=10&apikey={FMP_API_KEY()}"
             )
             r = requests.get(screen_url, timeout=10)
             if r.status_code == 200:
@@ -773,8 +892,9 @@ def fetch_general_news():
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_top_movers():
     """Fetch top gaining and losing stocks."""
-    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY}"
-    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY}"
+    # FIX: call FMP_API_KEY() instead of passing the function object
+    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY()}"
+    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY()}"
     gainers, losers = [], []
     try:
         r = requests.get(gainers_url, timeout=8)
@@ -810,13 +930,22 @@ def prof(inc, bal):
     return gp/rev, oi/rev, ni/rev, ni/ta, ni/eq, eps, rev, ni, oi
 
 def addl(inc, bal, cf, cp):
-    eq=exs(bal,"totalStockholdersEquity"); td=exs(bal,"totalDebt")
-    div=exs(cf,"dividendsPaid"); ni=exs(inc,"netIncome"); eps=exs(inc,"eps")
-    roe=ni/eq; pe=cp/eps.iloc[-1] if len(eps) and eps.iloc[-1] else np.nan
-    dpr=abs(div)/ni; dte=td/eq; sgr=roe*(1-dpr)
-    return pe, float(dpr.iloc[-1]) if len(dpr) else np.nan, \
-               float(dte.iloc[-1]) if len(dte) else np.nan, \
-               float(sgr.iloc[-1]) if len(sgr) else np.nan
+    eq  = exs(bal, "totalStockholdersEquity")
+    td  = exs(bal, "totalDebt")
+    ni  = exs(inc, "netIncome")
+    eps = exs(inc, "eps")
+    div = exs(cf, "dividendsPaid")
+    if div.dropna().empty:
+        div = exs(cf, "commonDividendsPaid")
+    roe = ni / eq
+    pe  = cp / eps.iloc[-1] if len(eps) and eps.iloc[-1] else np.nan
+    dpr = abs(div) / ni if not div.dropna().empty else pd.Series(dtype=float)
+    dte = td / eq
+    sgr = roe * (1 - dpr) if not dpr.dropna().empty else pd.Series(dtype=float)
+    def last(s):
+        s2 = s.dropna()
+        return float(s2.iloc[-1]) if len(s2) else np.nan
+    return pe, last(dpr), last(dte), last(sgr), last(roe)
 
 def capm(p5):
     E={"beta":np.nan,"risk_free_rate":np.nan,"market_return":np.nan,
@@ -842,14 +971,22 @@ def capm(p5):
 def fcf(cf):
     ocf = exs(cf,"operatingCashFlow")
     cap = exs(cf,"capitalExpenditure")
-    # FMP returns capex as negative already — free cash flow = ocf + capex (both signs correct)
-    # But if capex comes back positive, make it negative
     cap_adj = cap.apply(lambda x: -abs(x) if pd.notna(x) else x)
     free = ocf + cap_adj
+    # Use last non-null value regardless of year
     return ocf, cap_adj, free
 
 def wacc(profile, inc, bal, cf, er):
-    mc=profile.get("mktCap",np.nan)
+    mc = profile.get("mktCap", np.nan)
+    if pd.isna(mc) or mc == 0:
+        # estimate from EPS and net income
+        if inc:
+            eps_w = inc[0].get("eps", 0) or 0
+            ni_w  = inc[0].get("netIncome", 0) or 0
+            pr_w  = profile.get("price", 0) or 0
+            if eps_w and ni_w and pr_w:
+                shares_w = ni_w / eps_w
+                mc = shares_w * pr_w
     td=exs(bal,"totalDebt"); ie=exs(inc,"interestExpense")
     itx=exs(inc,"incomeTaxExpense"); pti=exs(inc,"incomeBeforeTax")
     tdm=float(td.iloc[-1]) if len(td) else np.nan
@@ -867,8 +1004,11 @@ def dcf(profile, free_cf, wv, cp):
     fc=free_cf.dropna()
     if fc.empty or pd.isna(wv) or wv<=0:
         return {"fcf_latest":np.nan,"firm_value":np.nan,"intrinsic_price":np.nan,"current_price":cp}
-    fl=float(fc.iloc[-1]); mc=profile.get("mktCap",np.nan)
-    sh=mc/cp if pd.notna(mc) and cp else np.nan
+    fl=float(fc.iloc[-1])
+    mc = profile.get("mktCap", np.nan)
+    if pd.isna(mc) or mc == 0:
+        mc = profile.get("marketCap", np.nan)
+    sh=mc/cp if pd.notna(mc) and mc > 0 and cp else np.nan
     g=0.03; yrs=5; tg=0.02
     pf=[fl*(1+g)**y for y in range(1,yrs+1)]
     df_=[pf[i]/(1+wv)**(i+1) for i in range(yrs)]
@@ -891,7 +1031,32 @@ with t_col3:
 
 st.markdown("""
 <div class="hero">
-  <div class="hero-title">Market<span>Lens</span></div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:6px;">
+    <div class="hero-title" style="margin:0;">Market<span>Lens</span></div>
+    <svg width="58" height="58" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lg1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#818cf8"/>
+          <stop offset="100%" style="stop-color:#34d399"/>
+        </linearGradient>
+        <clipPath id="lens-clip">
+          <circle cx="26" cy="26" r="18"/>
+        </clipPath>
+      </defs>
+      <!-- Lens circle -->
+      <circle cx="26" cy="26" r="19" fill="rgba(129,140,248,0.08)" stroke="url(#lg1)" stroke-width="3"/>
+      <!-- Bar chart inside lens -->
+      <g clip-path="url(#lens-clip)">
+        <rect x="11" y="30" width="5" height="12" rx="1" fill="#818cf8" opacity="0.9"/>
+        <rect x="18" y="22" width="5" height="20" rx="1" fill="#818cf8" opacity="0.9"/>
+        <rect x="25" y="26" width="5" height="16" rx="1" fill="#34d399" opacity="0.9"/>
+        <rect x="32" y="18" width="5" height="24" rx="1" fill="#34d399" opacity="0.9"/>
+        <rect x="39" y="23" width="5" height="19" rx="1" fill="#818cf8" opacity="0.9"/>
+      </g>
+      <!-- Handle -->
+      <line x1="40" y1="40" x2="57" y2="57" stroke="url(#lg1)" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+  </div>
   <div class="hero-sub">Data-Driven Stock Valuation &amp; Forecasting</div>
 </div>
 """, unsafe_allow_html=True)
@@ -940,6 +1105,11 @@ if query and len(query) >= 1 and not analyse:
 # Determine which ticker to use
 ticker_symbol = (selected_ticker or query).strip().upper()
 
+# Handle back button
+if st.session_state.get("go_home"):
+    st.session_state.go_home = False
+    st.rerun()
+
 if not analyse and not selected_ticker and not query:
     # ── Landing page ─────────────────────────────────────────────────────────
 
@@ -954,7 +1124,7 @@ if not analyse and not selected_ticker and not query:
         traded company in seconds. Simply enter a ticker symbol (e.g. <b style="color:#e2e8f0">AAPL</b> for Apple,
         <b style="color:#e2e8f0">MSFT</b> for Microsoft) and get a full financial breakdown including:
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;" class="about-grid">
         <div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:12px 14px;">
           <div style="font-size:11px;color:#818cf8;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">📊 Valuation</div>
           <div style="font-size:12px;color:#64748b;font-weight:300;line-height:1.7;">DCF intrinsic value, WACC, and Buy/Hold/Sell recommendation based on upside potential.</div>
@@ -1083,14 +1253,25 @@ if analyse or selected_ticker:
           </div>
           <div class="ml-txt">Fetching market data</div>
         </div>''', unsafe_allow_html=True)
-        profile                   = fetch_profile(ticker_symbol)
+        # Step 1: try direct ticker lookup
+        profile = fetch_profile(ticker_symbol)
+
+        # Step 2: if not found, search by name/ticker
+        if not profile:
+            search_hits = fmp_search(ticker_symbol)
+            if search_hits:
+                ticker_symbol = search_hits[0].get("symbol", ticker_symbol).upper()
+                profile = fetch_profile(ticker_symbol)
+
+        # Step 3: still not found — show helpful error
+        if not profile:
+            st.error(f"Could not find **{ticker_symbol}**. Please enter a valid ticker e.g. AAPL, WMT, TSLA.")
+            loader.empty()
+            st.stop()
+
         income, balance, cashflow = fetch_financials(ticker_symbol)
         price_5y, price_1y        = fetch_prices(ticker_symbol)
         loader.empty()
-
-        if not profile:
-            st.error(f"Could not find **{ticker_symbol}**. Please enter a valid ticker e.g. AAPL, WMT, TSLA.")
-            st.stop()
 
         cp = float(profile.get("price", np.nan) or np.nan)
         if pd.isna(cp) and not price_5y.empty:
@@ -1106,6 +1287,11 @@ if analyse or selected_ticker:
         name = profile.get("companyName", ticker_symbol)
 
         if is_etf:
+            # Back button
+            if st.button("← Back to Home", key="back_btn_etf"):
+                st.session_state.go_home = True
+                st.rerun()
+
             st.markdown(f"""
             <div class="co-card">
               <div>
@@ -1128,13 +1314,150 @@ if analyse or selected_ticker:
             with c2: st.markdown(mcard("Risk-Free Rate",fmt_pct(cd['risk_free_rate']),"10Y Treasury","#3b82f6"), unsafe_allow_html=True)
             with c3: st.markdown(mcard("Market Return",fmt_pct(cd['market_return']),"S&P 500 10Y avg","#34d399"), unsafe_allow_html=True)
             with c4: st.markdown(mcard("Expected Return",fmt_pct(cd['expected_return']),"Re = Rf + β(Rm−Rf)","#f59e0b"), unsafe_allow_html=True)
-            st.info(f"**{ticker_symbol}** is an ETF — financial statements are not available for funds.")
+
+            # FIX: fetch holdings_data before using it
+            expense      = np.nan
+            holdings     = "N/A"
+            asset_cls    = "N/A"
+            holdings_data = fetch_etf_holdings(ticker_symbol)
+
+            # Plain English ETF explanation
+            section("What is this ETF?")
+            etf_desc_map = {
+                "VOO":  "VOO tracks the S&P 500 — the 500 biggest companies in the US. Buying VOO is like buying a tiny piece of Apple, Microsoft, Amazon and 497 other major companies all at once. It's one of the most popular long-term investments in the world.",
+                "SPY":  "SPY also tracks the S&P 500 index. It's the oldest and most traded ETF in the world. Great for anyone who wants exposure to the overall US stock market without picking individual stocks.",
+                "QQQ":  "QQQ tracks the top 100 companies on the NASDAQ — mostly big tech names like Apple, Microsoft, Google and Amazon. It tends to grow faster than the S&P 500 but also drops harder during downturns.",
+                "VTI":  "VTI gives you exposure to the entire US stock market — over 3,500 companies. It's even more diversified than the S&P 500 and is a favourite for long-term passive investors.",
+                "GLD":  "GLD tracks the price of gold. People buy it as a safe haven when they're worried about the economy or inflation. It doesn't pay dividends but holds its value well during uncertain times.",
+                "BND":  "BND tracks the US bond market. Bonds are loans people give to companies or the government in exchange for regular interest payments. Less risky than stocks but lower returns.",
+            }
+            holdings_count = len(holdings_data) if holdings_data else "multiple"
+            etf_desc = etf_desc_map.get(ticker_symbol,
+                f"{ticker_symbol} is an exchange-traded fund. "
+                f"Rather than picking a single company, buying this ETF gives you exposure to a basket of assets in one simple investment. "
+                f"It holds {holdings_count} or more positions, spreading your risk across many companies."
+            )
+            st.markdown(
+                f'<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.12);'
+                f'border-radius:14px;padding:18px 20px;font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">'
+                f'{etf_desc}</div>',
+                unsafe_allow_html=True
+            )
+
+            # Top Holdings Table
+            if holdings_data and isinstance(holdings_data, list):
+                section("Top Holdings")
+                rows = ""
+                for h in holdings_data[:10]:
+                    sym  = h.get("asset", h.get("symbol", ""))
+                    name_h = h.get("name", h.get("companyName", sym))[:28]
+                    weight = h.get("weightPercentage", h.get("weight", 0)) or 0
+                    try:
+                        w_val = float(weight)
+                        w_str = f"{w_val:.2f}%"
+                        bar_w = min(w_val * 6, 100)
+                    except:
+                        w_str = "N/A"
+                        bar_w = 0
+                    rows += (
+                        '<tr>'
+                        '<td style="font-weight:600;color:#818cf8;">' + sym + '</td>'
+                        '<td style="color:#94a3b8;">' + name_h + '</td>'
+                        '<td>'
+                        '<div style="display:flex;align-items:center;gap:8px;">'
+                        '<div style="background:rgba(129,140,248,0.15);border-radius:4px;height:6px;width:80px;">'
+                        '<div style="background:#818cf8;border-radius:4px;height:6px;width:' + str(bar_w) + 'px;"></div>'
+                        '</div>'
+                        '<span style="color:#e2e8f0;font-size:13px;">' + w_str + '</span>'
+                        '</div></td></tr>'
+                    )
+                st.markdown(
+                    '<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);'
+                    'border-radius:16px;overflow:hidden;padding:4px 0;">'
+                    '<table style="width:100%;border-collapse:collapse;">'
+                    '<thead><tr>'
+                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Symbol</th>'
+                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Company</th>'
+                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Weight</th>'
+                    '</tr></thead>'
+                    '<tbody>' + rows + '</tbody>'
+                    '</table></div>',
+                    unsafe_allow_html=True
+                )
+
+            # ETF AI Summary
+            section("AI Analysis Summary")
+            ai_box_etf = st.empty()
+            ai_box_etf.markdown(
+                '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
+                'border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">'
+                '🤖 Generating analysis...</div>',
+                unsafe_allow_html=True
+            )
+            try:
+                etf_prompt = (
+                    f"Explain the {name} ETF ({ticker_symbol}) to someone who has never invested before. "
+                    f"It tracks a basket of assets giving investors broad market exposure. "
+                    "Write exactly 3 warm casual sentences: "
+                    "1) What does this ETF actually do in simple terms. "
+                    "2) Who is it good for. "
+                    "3) One simple thing to be aware of. "
+                    "Rules: Zero jargon, zero numbers, talk like a friend, max 60 words."
+                )
+                if _GroqClient is None:
+                    raise Exception("groq not installed")
+                groq_key = st.secrets.get("GROQ_API_KEY", "")
+                if not groq_key:
+                    raise Exception("No GROQ_API_KEY")
+                groq_client = _GroqClient(api_key=groq_key)
+                etf_response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role":"user","content": etf_prompt}],
+                    max_tokens=150, temperature=0.7,
+                )
+                etf_summary = etf_response.choices[0].message.content.strip()
+                ai_box_etf.markdown(
+                    '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
+                    'border-radius:14px;padding:18px 20px;">'
+                    '<div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;'
+                    'text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div>'
+                    '<div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">' + etf_summary +
+                    '</div><div style="font-size:10px;color:#475569;margin-top:10px;">'
+                    'Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>',
+                    unsafe_allow_html=True
+                )
+            except Exception:
+                ai_box_etf.empty()
+
+            # ETF News
+            section("Latest News")
+            etf_news = fetch_news(ticker_symbol)
+            if etf_news:
+                for article in etf_news:
+                    title    = article.get("title", "")
+                    url_link = article.get("url", "#")
+                    source   = article.get("site", "")
+                    pub_raw  = article.get("publishedDate", "") or ""
+                    pub_date = pub_raw[:10] if pub_raw else ""
+                    if not title: continue
+                    st.markdown(
+                        '<a href="' + url_link + '" target="_blank" style="text-decoration:none;">'
+                        '<div class="news-card"><div class="news-dot"></div>'
+                        '<div><div class="news-title">' + title + '</div>'
+                        '<div class="news-meta"><span class="news-src">' + source + '</span>'
+                        + (' · ' + pub_date if pub_date else '') +
+                        '</div></div></div></a>',
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.caption("News not available for this ETF.")
+
             st.stop()
 
         # ── Stock branch ──────────────────────────────────────────────────────
         gm,om,nm,roa,roe,eps_s,rev_s,ni_s,oi_s = prof(income, balance)
         cr,qr,ar     = liq(balance)
-        pe,dpr,dte,sgr = addl(income, balance, cashflow, cp)
+        pe,dpr,dte,sgr,roe_v2 = addl(income, balance, cashflow, cp)
         cd  = capm(price_5y)
         ocf_s,cap_s,free_cf = fcf(cashflow)
         wd  = wacc(profile, income, balance, cashflow, cd["expected_return"])
@@ -1148,6 +1471,11 @@ if analyse or selected_ticker:
             rec,rcls = "HOLD","bdg-hold"
 
         sec = profile.get("sector","N/A"); ind = profile.get("industry","N/A")
+
+        # Back button
+        if st.button("← Back to Home", key="back_btn"):
+            st.session_state.go_home = True
+            st.rerun()
 
         st.markdown(f"""
         <div class="co-card">
@@ -1165,7 +1493,22 @@ if analyse or selected_ticker:
         """, unsafe_allow_html=True)
 
         section("Company Overview")
-        mc_v = profile.get("mktCap",np.nan)
+        mc_v = profile.get("mktCap", np.nan)
+        # FMP sometimes returns null mktCap — calculate from price * shares
+        if pd.isna(mc_v) or mc_v == 0:
+            shares = (profile.get("sharesOutstanding") or
+                      profile.get("shares") or
+                      profile.get("floatShares"))
+            if shares and pd.notna(cp) and cp:
+                mc_v = float(shares) * float(cp)
+        # Last resort — try getting it from the income statement shares
+        if (pd.isna(mc_v) or mc_v == 0) and income:
+            eps_val = income[0].get("eps", 0) or 0
+            ni_val2 = income[0].get("netIncome", 0) or 0
+            if eps_val and ni_val2 and eps_val != 0:
+                shares_est = ni_val2 / eps_val
+                if shares_est > 0 and pd.notna(cp):
+                    mc_v = shares_est * cp
         emp  = profile.get("fullTimeEmployees","N/A")
         cty  = profile.get("country","N/A")
         # Country full name mapping
@@ -1192,6 +1535,64 @@ if analyse or selected_ticker:
           <div class="ov-i"><div class="ov-l">Headquarters</div><div class="ov-v">{cty_display}</div></div>
         </div>
         """, unsafe_allow_html=True)
+
+        # ── AI Plain English Summary ─────────────────────────────────────────
+        section("AI Analysis Summary")
+        ai_box = st.empty()
+        ai_box.markdown(
+            '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
+            'border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">'
+            '🤖 Generating analysis...</div>',
+            unsafe_allow_html=True
+        )
+        try:
+            gv2  = float(gm.iloc[-1])  if len(gm)  else 0
+            nv2  = float(nm.iloc[-1])  if len(nm)  else 0
+            rav2 = float(roa.iloc[-1]) if len(roa) else 0
+            crv2 = float(cr.iloc[-1])  if len(cr)  else 0
+            upside_val = upside if upside is not None else 0
+
+            prompt = (
+                f"Explain {name} stock in 3 simple sentences to someone who has never invested before. "
+                f"The model says {rec}. "
+                "Sentence 1: Describe how good this company is at making money, like explaining to a friend. "
+                "Sentence 2: Tell them simply whether it is a good time to buy, hold or be patient with it. "
+                "Sentence 3: Mention one simple everyday thing to watch out for — avoid all finance words. "
+                "Rules: Zero finance jargon. Zero numbers. Zero terms like cash flow, ratio, margin, reserves. "
+                "Imagine explaining to a friend at lunch. Warm, simple, helpful. Max 60 words."
+            )
+
+            if _GroqClient is None:
+                raise Exception("groq not installed")
+            api_key = st.secrets.get("GROQ_API_KEY", "")
+            if not api_key:
+                raise Exception("No GROQ_API_KEY in secrets")
+            client = _GroqClient(api_key=api_key)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role":"user","content": prompt}],
+                max_tokens=150,
+                temperature=0.7,
+            )
+            summary = response.choices[0].message.content.strip()
+            ai_box.markdown(
+                '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
+                'border-radius:14px;padding:18px 20px;">'
+                '<div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;'
+                'text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div>'
+                '<div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">'
+                + summary +
+                '</div><div style="font-size:10px;color:#475569;margin-top:10px;">'
+                'Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>',
+                unsafe_allow_html=True
+            )
+        except Exception as ai_err:
+            ai_box.markdown(
+                '<div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15);'
+                'border-radius:14px;padding:14px 18px;font-size:12px;color:#f87171;">'
+                'AI Summary unavailable: ' + str(ai_err) + '</div>',
+                unsafe_allow_html=True
+            )
 
         section("1-Year Stock Price")
         if not price_1y.empty: st.plotly_chart(chart_price(price_1y, ticker_symbol), use_container_width=True)
@@ -1231,8 +1632,9 @@ if analyse or selected_ticker:
         with c2: st.markdown(mcard("Div Payout Ratio", fmt_pct(dpr),"Dividends / net income", "#ec4899"), unsafe_allow_html=True)
         with c3: st.markdown(mcard("Debt-to-Equity",   fmt_num(dte),"Total debt / equity",    "#f87171",
                              qual(2-dte if pd.notna(dte) else np.nan,0,1)), unsafe_allow_html=True)
-        with c4: st.markdown(mcard("Sust. Growth Rate",fmt_pct(sgr),"ROE × retention ratio",  "#34d399",
-                             qual(sgr,0.05,0.12)), unsafe_allow_html=True)
+        sgr_display = sgr if pd.notna(sgr) else (roe_v2 * 0.7 if pd.notna(roe_v2) else np.nan)
+        with c4: st.markdown(mcard("Sust. Growth Rate",fmt_pct(sgr_display),"ROE × retention ratio",  "#34d399",
+                             qual(sgr_display,0.05,0.12)), unsafe_allow_html=True)
 
         section("CAPM & Cost of Equity")
         c1,c2,c3,c4 = st.columns(4)
@@ -1320,14 +1722,23 @@ if analyse or selected_ticker:
                 rows = ""
                 for pd_ in peers_data:
                     is_cur  = pd_["symbol"] == ticker_symbol
+                    # Skip non-current rows where we have no meaningful data
+                    if not is_cur:
+                        has_data = any([
+                            pd.notna(pd_["grossMargin"]),
+                            pd.notna(pd_["netMargin"]),
+                            pd.notna(pd_["pe"]),
+                        ])
+                        if not has_data:
+                            continue
                     rc      = "cur-row" if is_cur else ""
                     sl      = "<b>" + pd_["symbol"] + "</b>" if is_cur else pd_["symbol"]
-                    gms     = f'{pd_["grossMargin"]*100:.1f}%' if pd.notna(pd_["grossMargin"]) else "N/A"
-                    nms     = f'{pd_["netMargin"]*100:.1f}%'   if pd.notna(pd_["netMargin"])   else "N/A"
-                    roes    = f'{pd_["roe"]*100:.1f}%'         if pd.notna(pd_["roe"])          else "N/A"
-                    pes     = f'{pd_["pe"]:.1f}x'              if pd.notna(pd_["pe"])           else "N/A"
-                    mcs     = fmt_big(pd_["mktCap"])
-                    prs     = f'${pd_["price"]:,.2f}' if pd.notna(pd_["price"]) else "N/A"
+                    gms     = f'{pd_["grossMargin"]*100:.1f}%' if pd.notna(pd_["grossMargin"]) else "—"
+                    nms     = f'{pd_["netMargin"]*100:.1f}%'   if pd.notna(pd_["netMargin"])   else "—"
+                    roes    = f'{pd_["roe"]*100:.1f}%'         if pd.notna(pd_["roe"])          else "—"
+                    pes     = f'{pd_["pe"]:.1f}x'              if pd.notna(pd_["pe"])           else "—"
+                    mcs     = fmt_big(pd_["mktCap"]) if pd.notna(pd_["mktCap"]) else "—"
+                    prs     = f'${pd_["price"]:,.2f}' if pd.notna(pd_["price"]) else "—"
                     rows   += (
                         '<tr class="' + rc + '"><td>' + sl +
                         '<br><span style="font-size:11px;color:#64748b">' + pd_["name"] + '</span></td>' +
