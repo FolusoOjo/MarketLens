@@ -416,36 +416,68 @@ def fetch_financials(sym):
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_prices(sym):
     """
-    Fetch price history via FMP /stable/ endpoint.
-    /api/v3/ returns 403 on free plan — /stable/ works for all symbols including ETFs.
+    Fetch price history. Tries FMP /stable/ first, then yfinance as fallback.
+    Both sources normalize to midnight timestamps so they join correctly with
+    fetch_market() data for the CAPM regression.
     """
     _k = FMP_API_KEY()
-    url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
+
+    def _build_result(df):
+        """Normalize and split a price DataFrame into 5y and 1y slices."""
+        df = df.rename(columns={c: "Close"  for c in df.columns if c.lower() == "close"})
+        df = df.rename(columns={c: "Open"   for c in df.columns if c.lower() == "open"})
+        df = df.rename(columns={c: "High"   for c in df.columns if c.lower() == "high"})
+        df = df.rename(columns={c: "Low"    for c in df.columns if c.lower() == "low"})
+        df = df.rename(columns={c: "Volume" for c in df.columns if c.lower() == "volume"})
+        if "Close" not in df.columns:
+            return None, None
+        try:
+            df.index = df.index.tz_localize(None)
+        except Exception:
+            try:
+                df.index = df.index.tz_convert(None)
+            except Exception:
+                pass
+        try:
+            df.index = df.index.normalize()
+        except Exception:
+            pass
+        now = pd.Timestamp.now()
+        p5 = df[df.index >= now - pd.DateOffset(years=5)]
+        p1 = df[df.index >= now - pd.DateOffset(years=1)]
+        return p5, p1
+
+    # ── Primary: FMP /stable/ ─────────────────────────────────────────────────
     try:
+        url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
         r = requests.get(url, timeout=15)
         if r.status_code == 200:
             data = r.json()
-            # /stable/ returns a plain list; /api/v3/ returns {"historical": [...]}
             if isinstance(data, dict):
                 data = data.get("historical", data.get("results", []))
-            if data:
+            if data and len(data) > 30:
                 df = pd.DataFrame(data)
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.set_index("date").sort_index()
-                # normalise column names regardless of case
-                df = df.rename(columns={c: "Close"  for c in df.columns if c.lower() == "close"})
-                df = df.rename(columns={c: "Open"   for c in df.columns if c.lower() == "open"})
-                df = df.rename(columns={c: "High"   for c in df.columns if c.lower() == "high"})
-                df = df.rename(columns={c: "Low"    for c in df.columns if c.lower() == "low"})
-                df = df.rename(columns={c: "Volume" for c in df.columns if c.lower() == "volume"})
-                if "Close" not in df.columns:
-                    return pd.DataFrame(), pd.DataFrame()
-                now = pd.Timestamp.now()
-                p5 = df[df.index >= now - pd.DateOffset(years=5)]
-                p1 = df[df.index >= now - pd.DateOffset(years=1)]
+                p5, p1 = _build_result(df)
+                if p5 is not None and not p5.empty:
+                    return p5, p1
+    except Exception:
+        pass
+
+    # ── Fallback: yfinance ────────────────────────────────────────────────────
+    try:
+        import yfinance as yf
+        df = yf.download(sym, period="6y", interval="1d",
+                         auto_adjust=True, progress=False)
+        if not df.empty:
+            df = flatten(df)
+            p5, p1 = _build_result(df)
+            if p5 is not None and not p5.empty:
                 return p5, p1
     except Exception:
         pass
+
     return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -559,32 +591,64 @@ def fetch_peers(sym):
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market():
     """
-    Fetch SPY as S&P 500 proxy using /stable/ endpoint (works on FMP free plan).
-    Risk-free rate from TNX quote endpoint with 4.3% hardcoded fallback.
+    Fetch S&P 500 proxy (SPY) using yfinance first — reliable on Streamlit Cloud.
+    Falls back to FMP /stable/ if yfinance fails.
+    Risk-free rate from FMP TNX with 4.3% hardcoded fallback.
     """
     _k = FMP_API_KEY()
     mkt = pd.DataFrame()
 
-    for sym in ["SPY", "IVV", "VOO"]:
-        try:
-            url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
-            r = requests.get(url, timeout=15)
-            if r.status_code == 200:
-                data = r.json()
-                if isinstance(data, dict):
-                    data = data.get("historical", data.get("results", []))
-                if data and len(data) > 200:
-                    df = pd.DataFrame(data)
-                    df["date"] = pd.to_datetime(df["date"])
-                    df = df.set_index("date").sort_index()
-                    df = df.rename(columns={c: "Close" for c in df.columns if c.lower() == "close"})
-                    if "Close" in df.columns:
-                        mkt = df
-                        break
-        except Exception:
-            pass
+    # ── Primary: yfinance (most reliable, no API key needed) ──────────────────
+    try:
+        import yfinance as yf
+        spy = yf.download("SPY", period="6y", interval="1d",
+                          auto_adjust=True, progress=False)
+        if not spy.empty:
+            spy = flatten(spy)
+            if "Close" not in spy.columns:
+                spy = spy.rename(columns={c: "Close" for c in spy.columns if c.lower() == "close"})
+            if "Close" in spy.columns and len(spy) > 200:
+                try:
+                    spy.index = spy.index.tz_localize(None)
+                except Exception:
+                    try:
+                        spy.index = spy.index.tz_convert(None)
+                    except Exception:
+                        pass
+                try:
+                    spy.index = spy.index.normalize()
+                except Exception:
+                    pass
+                mkt = spy
+    except Exception:
+        pass
 
-    # Risk-free rate from TNX quote
+    # ── Fallback: FMP /stable/ endpoint ───────────────────────────────────────
+    if mkt.empty:
+        for sym in ["SPY", "IVV", "VOO"]:
+            try:
+                url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
+                r = requests.get(url, timeout=15)
+                if r.status_code == 200:
+                    data = r.json()
+                    if isinstance(data, dict):
+                        data = data.get("historical", data.get("results", []))
+                    if data and len(data) > 100:
+                        df = pd.DataFrame(data)
+                        df["date"] = pd.to_datetime(df["date"])
+                        df = df.set_index("date").sort_index()
+                        df = df.rename(columns={c: "Close" for c in df.columns if c.lower() == "close"})
+                        if "Close" in df.columns:
+                            try:
+                                df.index = df.index.normalize()
+                            except Exception:
+                                pass
+                            mkt = df
+                            break
+            except Exception:
+                pass
+
+    # ── Risk-free rate: FMP TNX → hardcoded fallback ──────────────────────────
     rfv = np.nan
     try:
         r2 = requests.get(
@@ -722,6 +786,22 @@ def addl(inc, bal, cf, cp):
         return float(s2.iloc[-1]) if len(s2) else np.nan
     return pe, last(dpr), last(dte), last(sgr), last(roe)
 
+def _normalize_index_to_date(s):
+    """Strip timezone and time component so indices align on date only."""
+    try:
+        s.index = s.index.tz_localize(None)
+    except Exception:
+        try:
+            s.index = s.index.tz_convert(None)
+        except Exception:
+            pass
+    # Normalize to midnight so date-only and datetime indices join correctly
+    try:
+        s.index = s.index.normalize()
+    except Exception:
+        pass
+    return s
+
 def capm(p5):
     E = {"beta": np.nan, "risk_free_rate": np.nan, "market_return": np.nan,
          "expected_return": np.nan, "slope": np.nan, "r_squared": np.nan}
@@ -730,27 +810,23 @@ def capm(p5):
     sr = p5["Close"].pct_change().dropna()
     if sr.empty:
         return E
-    try:
-        sr.index = sr.index.tz_localize(None)
-    except Exception:
-        try:
-            sr.index = sr.index.tz_convert(None)
-        except Exception:
-            pass
+    sr = _normalize_index_to_date(sr)
+
     mkt, rf = fetch_market()
     if mkt.empty:
         return E
     mr = mkt["Close"].pct_change().dropna()
-    try:
-        mr.index = mr.index.tz_localize(None)
-    except Exception:
-        try:
-            mr.index = mr.index.tz_convert(None)
-        except Exception:
-            pass
+    mr = _normalize_index_to_date(mr)
+
+    # Deduplicate both indices before joining (keeps last entry per date)
+    sr = sr[~sr.index.duplicated(keep="last")]
+    mr = mr[~mr.index.duplicated(keep="last")]
+
     ret = pd.concat([sr.rename("S"), mr.rename("M")], axis=1).dropna()
-    if len(ret) < 30:
+
+    if len(ret) < 20:
         return E
+
     cov  = ret["S"].cov(ret["M"])
     mv   = ret["M"].var()
     beta = cov / mv if mv else np.nan
