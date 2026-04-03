@@ -459,7 +459,10 @@ def flatten(df):
     return df.loc[:, ~df.columns.duplicated()]
 
 def _session():
-    return curl_requests.Session(impersonate="chrome")
+    try:
+        return curl_requests.Session(impersonate="chrome")
+    except Exception:
+        return requests.Session()
 
 # ── Plotly theme ───────────────────────────────────────────────────────────────
 _PL = dict(
@@ -630,10 +633,21 @@ def fetch_financials(sym):
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_prices(sym):
     try:
-        s = _session(); t = yf.Ticker(sym, session=s)
-        return flatten(t.history(period="5y")), flatten(t.history(period="1y"))
+        s = _session()
+        t = yf.Ticker(sym, session=s)
+        p5 = flatten(t.history(period="5y"))
+        p1 = flatten(t.history(period="1y"))
+        if p5.empty:  # retry without custom session (Streamlit Cloud fallback)
+            t2 = yf.Ticker(sym)
+            p5 = flatten(t2.history(period="5y"))
+            p1 = flatten(t2.history(period="1y"))
+        return p5, p1
     except Exception:
-        return pd.DataFrame(), pd.DataFrame()
+        try:
+            t2 = yf.Ticker(sym)
+            return flatten(t2.history(period="5y")), flatten(t2.history(period="1y"))
+        except Exception:
+            return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_news(sym):
@@ -808,9 +822,17 @@ def fetch_market():
         mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, session=s, multi_level_index=False))
         # Use 1mo period so we always get the last available data even on weekends/holidays
         rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, session=s, multi_level_index=False))
+        if mkt.empty:  # retry without custom session (Streamlit Cloud fallback)
+            mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, multi_level_index=False))
+            rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, multi_level_index=False))
         return mkt, rf
     except Exception:
-        return pd.DataFrame(), pd.DataFrame()
+        try:
+            mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, multi_level_index=False))
+            rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, multi_level_index=False))
+            return mkt, rf
+        except Exception:
+            return pd.DataFrame(), pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -823,22 +845,31 @@ def fetch_market_indices():
         "VIX": "^VIX",
     }
     results = []
+    sessions_to_try = []
     try:
-        s = _session()
-        for name_idx, sym_idx in indices.items():
-            try:
-                t = yf.Ticker(sym_idx, session=s)
-                h = flatten(t.history(period="2d"))
-                if not h.empty and len(h) >= 2:
-                    cur = float(h["Close"].iloc[-1])
-                    prev_c = float(h["Close"].iloc[-2])
-                    chg = cur - prev_c
-                    chgp = (chg / prev_c) * 100
-                    results.append({"name": name_idx, "price": cur, "change": chg, "changePct": chgp})
-            except Exception:
-                pass
+        sessions_to_try.append(_session())
     except Exception:
         pass
+    sessions_to_try.append(None)  # None = no custom session (plain yfinance)
+    for sess in sessions_to_try:
+        results = []
+        try:
+            for name_idx, sym_idx in indices.items():
+                try:
+                    t = yf.Ticker(sym_idx, session=sess) if sess else yf.Ticker(sym_idx)
+                    h = flatten(t.history(period="5d"))
+                    if not h.empty and len(h) >= 2:
+                        cur = float(h["Close"].iloc[-1])
+                        prev_c = float(h["Close"].iloc[-2])
+                        chg = cur - prev_c
+                        chgp = (chg / prev_c) * 100
+                        results.append({"name": name_idx, "price": cur, "change": chg, "changePct": chgp})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if results:
+            break
     return results
 
 @st.cache_data(ttl=1800, show_spinner=False)
