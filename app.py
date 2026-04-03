@@ -415,19 +415,31 @@ def fetch_financials(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_prices(sym):
-    """Use FMP historical prices — reliable on Streamlit Cloud, no yfinance needed."""
+    """
+    Fetch price history via FMP /stable/ endpoint.
+    /api/v3/ returns 403 on free plan — /stable/ works for all symbols including ETFs.
+    """
+    _k = FMP_API_KEY()
+    url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
     try:
-        _k = FMP_API_KEY()
-        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{sym}?apikey={_k}"
         r = requests.get(url, timeout=15)
         if r.status_code == 200:
-            data = r.json().get("historical", [])
+            data = r.json()
+            # /stable/ returns a plain list; /api/v3/ returns {"historical": [...]}
+            if isinstance(data, dict):
+                data = data.get("historical", data.get("results", []))
             if data:
                 df = pd.DataFrame(data)
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.set_index("date").sort_index()
-                df = df.rename(columns={"close": "Close", "open": "Open",
-                                        "high": "High", "low": "Low", "volume": "Volume"})
+                # normalise column names regardless of case
+                df = df.rename(columns={c: "Close"  for c in df.columns if c.lower() == "close"})
+                df = df.rename(columns={c: "Open"   for c in df.columns if c.lower() == "open"})
+                df = df.rename(columns={c: "High"   for c in df.columns if c.lower() == "high"})
+                df = df.rename(columns={c: "Low"    for c in df.columns if c.lower() == "low"})
+                df = df.rename(columns={c: "Volume" for c in df.columns if c.lower() == "volume"})
+                if "Close" not in df.columns:
+                    return pd.DataFrame(), pd.DataFrame()
                 now = pd.Timestamp.now()
                 p5 = df[df.index >= now - pd.DateOffset(years=5)]
                 p1 = df[df.index >= now - pd.DateOffset(years=1)]
@@ -546,30 +558,66 @@ def fetch_peers(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market():
-    """Use FMP for S&P 500 and TNX — works on Streamlit Cloud."""
+    """
+    Fetch SPY as S&P 500 proxy using /stable/ endpoint (works on FMP free plan).
+    Risk-free rate from TNX quote endpoint with 4.3% hardcoded fallback.
+    """
+    _k = FMP_API_KEY()
+    mkt = pd.DataFrame()
+
+    for sym in ["SPY", "IVV", "VOO"]:
+        try:
+            url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
+            r = requests.get(url, timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, dict):
+                    data = data.get("historical", data.get("results", []))
+                if data and len(data) > 200:
+                    df = pd.DataFrame(data)
+                    df["date"] = pd.to_datetime(df["date"])
+                    df = df.set_index("date").sort_index()
+                    df = df.rename(columns={c: "Close" for c in df.columns if c.lower() == "close"})
+                    if "Close" in df.columns:
+                        mkt = df
+                        break
+        except Exception:
+            pass
+
+    # Risk-free rate from TNX quote
+    rfv = np.nan
     try:
-        _k = FMP_API_KEY()
-        mkt = pd.DataFrame()
-        rf  = pd.DataFrame()
-        r = requests.get(f"https://financialmodelingprep.com/api/v3/historical-price-full/%5EGSPC?apikey={_k}", timeout=15)
-        if r.status_code == 200:
-            data = r.json().get("historical", [])
-            if data:
-                mkt = pd.DataFrame(data)
-                mkt["date"] = pd.to_datetime(mkt["date"])
-                mkt = mkt.set_index("date").sort_index()
-                mkt = mkt.rename(columns={"close": "Close"})
-        r2 = requests.get(f"https://financialmodelingprep.com/api/v3/historical-price-full/%5ETNX?apikey={_k}", timeout=15)
+        r2 = requests.get(
+            f"https://financialmodelingprep.com/api/v3/quote/%5ETNX?apikey={_k}",
+            timeout=10,
+        )
         if r2.status_code == 200:
-            data2 = r2.json().get("historical", [])
-            if data2:
-                rf = pd.DataFrame(data2)
-                rf["date"] = pd.to_datetime(rf["date"])
-                rf = rf.set_index("date").sort_index()
-                rf = rf.rename(columns={"close": "Close"})
-        return mkt, rf
+            q = r2.json()
+            if isinstance(q, list) and q:
+                rfv = float(q[0].get("price", 0) or 0)
     except Exception:
-        return pd.DataFrame(), pd.DataFrame()
+        pass
+
+    if np.isnan(rfv) or rfv <= 0:
+        try:
+            r3 = requests.get(
+                f"https://financialmodelingprep.com/stable/quote?symbol=TNX&apikey={_k}",
+                timeout=10,
+            )
+            if r3.status_code == 200:
+                q3 = r3.json()
+                if isinstance(q3, list) and q3:
+                    rfv = float(q3[0].get("price", 0) or 0)
+                elif isinstance(q3, dict):
+                    rfv = float(q3.get("price", 0) or 0)
+        except Exception:
+            pass
+
+    if np.isnan(rfv) or rfv <= 0:
+        rfv = 4.3
+
+    rf = pd.DataFrame({"Close": [rfv]}, index=[pd.Timestamp.now()])
+    return mkt, rf
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_market_indices():
@@ -675,30 +723,43 @@ def addl(inc, bal, cf, cp):
     return pe, last(dpr), last(dte), last(sgr), last(roe)
 
 def capm(p5):
-    E={"beta":np.nan,"risk_free_rate":np.nan,"market_return":np.nan,
-       "expected_return":np.nan,"slope":np.nan,"r_squared":np.nan}
-    if p5.empty or "Close" not in p5.columns: return E
-    sr=p5["Close"].pct_change().dropna()
-    if sr.empty: return E
-    try: sr.index=sr.index.tz_localize(None)
-    except: pass
-    mkt,rf=fetch_market()
-    if mkt.empty: return E
-    mr=mkt["Close"].pct_change().dropna()
-    ret=pd.concat([sr,mr],axis=1).dropna(); ret.columns=["S","M"]
-    if ret.empty: return E
-    cov=ret.cov().iloc[0,1]; mv=ret["M"].var()
-    beta=cov/mv if mv else np.nan
-    slope,_,rv,_,_=stats.linregress(ret["M"],ret["S"])
-    rfv = np.nan
-    if not rf.empty:
-        rf_close = rf["Close"].dropna()
-        if not rf_close.empty:
-            rfv = float(rf_close.iloc[-1]) / 100
-    mr10=ret["M"].mean()*252
-    er=rfv+beta*(mr10-rfv) if pd.notna(rfv) and pd.notna(beta) else np.nan
-    return {"beta":beta,"risk_free_rate":rfv,"market_return":mr10,
-            "expected_return":er,"slope":slope,"r_squared":rv**2}
+    E = {"beta": np.nan, "risk_free_rate": np.nan, "market_return": np.nan,
+         "expected_return": np.nan, "slope": np.nan, "r_squared": np.nan}
+    if p5.empty or "Close" not in p5.columns:
+        return E
+    sr = p5["Close"].pct_change().dropna()
+    if sr.empty:
+        return E
+    try:
+        sr.index = sr.index.tz_localize(None)
+    except Exception:
+        try:
+            sr.index = sr.index.tz_convert(None)
+        except Exception:
+            pass
+    mkt, rf = fetch_market()
+    if mkt.empty:
+        return E
+    mr = mkt["Close"].pct_change().dropna()
+    try:
+        mr.index = mr.index.tz_localize(None)
+    except Exception:
+        try:
+            mr.index = mr.index.tz_convert(None)
+        except Exception:
+            pass
+    ret = pd.concat([sr.rename("S"), mr.rename("M")], axis=1).dropna()
+    if len(ret) < 30:
+        return E
+    cov  = ret["S"].cov(ret["M"])
+    mv   = ret["M"].var()
+    beta = cov / mv if mv else np.nan
+    slope, _, rv, _, _ = stats.linregress(ret["M"], ret["S"])
+    rfv  = float(rf["Close"].iloc[-1]) / 100
+    mr10 = ret["M"].mean() * 252
+    er   = rfv + beta * (mr10 - rfv) if pd.notna(beta) else np.nan
+    return {"beta": beta, "risk_free_rate": rfv, "market_return": mr10,
+            "expected_return": er, "slope": slope, "r_squared": rv ** 2}
 
 def fcf(cf):
     ocf = exs(cf,"operatingCashFlow")
