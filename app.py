@@ -806,7 +806,8 @@ def fetch_market():
     try:
         s = _session()
         mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, session=s, multi_level_index=False))
-        rf  = flatten(yf.download("^TNX",  period="5d",  auto_adjust=True, progress=False, session=s, multi_level_index=False))
+        # Use 1mo period so we always get the last available data even on weekends/holidays
+        rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, session=s, multi_level_index=False))
         return mkt, rf
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
@@ -941,7 +942,11 @@ def capm(p5):
     cov=ret.cov().iloc[0,1]; mv=ret["M"].var()
     beta=cov/mv if mv else np.nan
     slope,_,rv,_,_=stats.linregress(ret["M"],ret["S"])
-    rfv=float(rf["Close"].iloc[-1])/100 if not rf.empty else np.nan
+    rfv = np.nan
+    if not rf.empty:
+        rf_close = rf["Close"].dropna()
+        if not rf_close.empty:
+            rfv = float(rf_close.iloc[-1]) / 100
     mr10=ret["M"].mean()*252
     er=rfv+beta*(mr10-rfv) if pd.notna(rfv) and pd.notna(beta) else np.nan
     return {"beta":beta,"risk_free_rate":rfv,"market_return":mr10,
