@@ -17,7 +17,6 @@ pd.options.display.float_format = '{:,.2f}'.format
 FMP_KEYS = [
     "ExDbZ2hOn1W8RSnDqoXyk01gZqklHRek",  # account 2
     "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1",  # account 1
-    "1ZySs1wCw6vvywwRcaTZksTaGMm0M2XJ",  # account 3
 ]
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
@@ -675,25 +674,6 @@ def fetch_news(sym):
     return []
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_etf_holdings(sym):
-    """Fetch ETF holdings from FMP."""
-    _k = FMP_API_KEY()
-    urls = [
-        f"https://financialmodelingprep.com/api/v3/etf-holder/{sym}?apikey={_k}",
-        f"https://financialmodelingprep.com/stable/etf-holder?symbol={sym}&apikey={_k}",
-    ]
-    for url in urls:
-        try:
-            r = requests.get(url, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if isinstance(data, list) and data:
-                    return data
-        except Exception:
-            pass
-    return []
-
-@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_peers(sym):
     """Fetch stock peers — tries API first, then builds from sector/industry."""
     # Try FMP peers API
@@ -892,9 +872,8 @@ def fetch_general_news():
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_top_movers():
     """Fetch top gaining and losing stocks."""
-    # FIX: call FMP_API_KEY() instead of passing the function object
-    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY()}"
-    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY()}"
+    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY}"
+    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY}"
     gainers, losers = [], []
     try:
         r = requests.get(gainers_url, timeout=8)
@@ -977,27 +956,33 @@ def fcf(cf):
     return ocf, cap_adj, free
 
 def wacc(profile, inc, bal, cf, er):
-    mc = profile.get("mktCap", np.nan)
-    if pd.isna(mc) or mc == 0:
-        # estimate from EPS and net income
-        if inc:
-            eps_w = inc[0].get("eps", 0) or 0
-            ni_w  = inc[0].get("netIncome", 0) or 0
-            pr_w  = profile.get("price", 0) or 0
-            if eps_w and ni_w and pr_w:
-                shares_w = ni_w / eps_w
-                mc = shares_w * pr_w
+    mc = float(profile.get("mktCap") or 0)
+    # Multiple fallbacks for market cap
+    if mc == 0 and inc:
+        eps_w = float(inc[0].get("eps") or 0)
+        ni_w  = float(inc[0].get("netIncome") or 0)
+        pr_w  = float(profile.get("price") or 0)
+        if eps_w and ni_w and pr_w:
+            mc = (ni_w / eps_w) * pr_w
+    if mc == 0:
+        shares = float(profile.get("sharesOutstanding") or
+                       profile.get("shares") or 0)
+        pr_w   = float(profile.get("price") or 0)
+        if shares and pr_w:
+            mc = shares * pr_w
+    mc = mc if mc > 0 else np.nan
     td=exs(bal,"totalDebt"); ie=exs(inc,"interestExpense")
     itx=exs(inc,"incomeTaxExpense"); pti=exs(inc,"incomeBeforeTax")
-    tdm=float(td.iloc[-1]) if len(td) else np.nan
-    iem=float(ie.iloc[-1]) if len(ie) else np.nan
-    itm=float(itx.iloc[-1]) if len(itx) else np.nan
-    ptm=float(pti.iloc[-1]) if len(pti) else np.nan
+    tdm=float(td.dropna().iloc[-1]) if len(td.dropna()) else np.nan
+    iem=float(ie.dropna().iloc[-1]) if len(ie.dropna()) else np.nan
+    itm=float(itx.dropna().iloc[-1]) if len(itx.dropna()) else np.nan
+    ptm=float(pti.dropna().iloc[-1]) if len(pti.dropna()) else np.nan
     cod=abs(iem)/tdm if pd.notna(tdm) and tdm else np.nan
     tr=abs(itm)/abs(ptm) if pd.notna(ptm) and ptm else np.nan
-    E=mc; D=tdm; V=E+D if pd.notna(E) and pd.notna(D) else np.nan
+    E=mc; D=tdm if pd.notna(tdm) else 0
+    V=E+D if pd.notna(E) else np.nan
     w=((E/V)*er+(D/V)*cod*(1-tr)
-       if all(pd.notna(x) for x in [E,D,V,cod,tr,er]) and V else np.nan)
+       if all(pd.notna(x) for x in [E,V,er]) and V and pd.notna(cod) and pd.notna(tr) else np.nan)
     return {"market_cap":mc,"total_debt":tdm,"cost_of_debt":cod,"tax_rate":tr,"wacc":w}
 
 def dcf(profile, free_cf, wv, cp):
@@ -1314,12 +1299,9 @@ if analyse or selected_ticker:
             with c2: st.markdown(mcard("Risk-Free Rate",fmt_pct(cd['risk_free_rate']),"10Y Treasury","#3b82f6"), unsafe_allow_html=True)
             with c3: st.markdown(mcard("Market Return",fmt_pct(cd['market_return']),"S&P 500 10Y avg","#34d399"), unsafe_allow_html=True)
             with c4: st.markdown(mcard("Expected Return",fmt_pct(cd['expected_return']),"Re = Rf + β(Rm−Rf)","#f59e0b"), unsafe_allow_html=True)
-
-            # FIX: fetch holdings_data before using it
-            expense      = np.nan
-            holdings     = "N/A"
-            asset_cls    = "N/A"
-            holdings_data = fetch_etf_holdings(ticker_symbol)
+            expense   = np.nan
+            holdings  = "N/A"
+            asset_cls = "N/A"
 
             # Plain English ETF explanation
             section("What is this ETF?")
