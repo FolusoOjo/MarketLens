@@ -1303,6 +1303,18 @@ if analyse or selected_ticker:
             holdings  = "N/A"
             asset_cls = "N/A"
 
+            # Fetch ETF holdings from FMP
+            holdings_data = []
+            try:
+                h_url = f"https://financialmodelingprep.com/api/v3/etf-holder/{ticker_symbol}?apikey={FMP_API_KEY()}"
+                h_resp = requests.get(h_url, timeout=10)
+                if h_resp.status_code == 200:
+                    h_json = h_resp.json()
+                    if isinstance(h_json, list):
+                        holdings_data = h_json
+            except Exception:
+                holdings_data = []
+
             # Plain English ETF explanation
             section("What is this ETF?")
             etf_desc_map = {
