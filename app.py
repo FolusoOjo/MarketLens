@@ -17,6 +17,7 @@ pd.options.display.float_format = '{:,.2f}'.format
 FMP_KEYS = [
     "ExDbZ2hOn1W8RSnDqoXyk01gZqklHRek",  # account 2
     "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1",  # account 1
+    "1ZySs1wCw6vvywwRcaTZksTaGMm0M2XJ",  # account 3
 ]
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
