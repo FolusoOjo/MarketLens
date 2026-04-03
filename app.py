@@ -633,22 +633,16 @@ def fetch_financials(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_prices(sym):
-    try:
-        s = _session()
-        t = yf.Ticker(sym, session=s)
-        p5 = flatten(t.history(period="5y"))
-        p1 = flatten(t.history(period="1y"))
-        if p5.empty:  # retry without custom session (Streamlit Cloud fallback)
-            t2 = yf.Ticker(sym)
-            p5 = flatten(t2.history(period="5y"))
-            p1 = flatten(t2.history(period="1y"))
-        return p5, p1
-    except Exception:
+    for use_session in [True, False]:
         try:
-            t2 = yf.Ticker(sym)
-            return flatten(t2.history(period="5y")), flatten(t2.history(period="1y"))
+            t = yf.Ticker(sym, session=_session()) if use_session else yf.Ticker(sym)
+            p5 = flatten(t.history(period="5y"))
+            p1 = flatten(t.history(period="1y"))
+            if not p5.empty:
+                return p5, p1
         except Exception:
-            return pd.DataFrame(), pd.DataFrame()
+            pass
+    return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_news(sym):
@@ -818,22 +812,18 @@ def fetch_peers(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market():
-    try:
-        s = _session()
-        mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, session=s, multi_level_index=False))
-        # Use 1mo period so we always get the last available data even on weekends/holidays
-        rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, session=s, multi_level_index=False))
-        if mkt.empty:  # retry without custom session (Streamlit Cloud fallback)
-            mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, multi_level_index=False))
-            rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, multi_level_index=False))
-        return mkt, rf
-    except Exception:
+    for use_session in [True, False]:
         try:
-            mkt = flatten(yf.download("^GSPC", period="10y", auto_adjust=True, progress=False, multi_level_index=False))
-            rf  = flatten(yf.download("^TNX",  period="1mo", auto_adjust=True, progress=False, multi_level_index=False))
-            return mkt, rf
+            kwargs = {"auto_adjust": True, "progress": False, "multi_level_index": False}
+            if use_session:
+                kwargs["session"] = _session()
+            mkt = flatten(yf.download("^GSPC", period="10y", **kwargs))
+            rf  = flatten(yf.download("^TNX",  period="1mo", **kwargs))
+            if not mkt.empty:
+                return mkt, rf
         except Exception:
-            return pd.DataFrame(), pd.DataFrame()
+            pass
+    return pd.DataFrame(), pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -905,8 +895,8 @@ def fetch_general_news():
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_top_movers():
     """Fetch top gaining and losing stocks."""
-    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY}"
-    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY}"
+    gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY()}"
+    losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY()}"
     gainers, losers = [], []
     try:
         r = requests.get(gainers_url, timeout=8)
