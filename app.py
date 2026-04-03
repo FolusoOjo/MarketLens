@@ -13,32 +13,27 @@ except Exception:
 
 pd.options.display.float_format = '{:,.2f}'.format
 
-# ── API Key Rotation — cycles through keys when one hits daily limit ──────────
+# ── API Key Rotation ──────────────────────────────────────────────────────────
 FMP_KEYS = [
-    "ExDbZ2hOn1W8RSnDqoXyk01gZqklHRek",  # account 2
-    "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1",  # account 1
-    "1ZySs1wCw6vvywwRcaTZksTaGMm0M2XJ",  # account 3
+    "ExDbZ2hOn1W8RSnDqoXyk01gZqklHRek",
+    "aTxTmpqxyHRTAFEX9kPkSmEBvsEPcvz1",
+    "1ZySs1wCw6vvywwRcaTZksTaGMm0M2XJ",
 ]
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
 def get_fmp_key():
-    """Returns the first working API key by testing each one."""
     for key in FMP_KEYS:
         try:
-            test = requests.get(
-                f"{FMP_BASE}/profile?symbol=AAPL&apikey={key}",
-                timeout=8
-            )
+            test = requests.get(f"{FMP_BASE}/profile?symbol=AAPL&apikey={key}", timeout=8)
             if test.status_code == 200:
                 data = test.json()
                 if isinstance(data, list) and len(data) > 0:
                     return key
         except Exception:
             pass
-    return FMP_KEYS[0]  # fallback to first key
+    return FMP_KEYS[0]
 
-# Cache the working key for 1 hour to avoid wasting calls on key checks
-import functools, time as _time
+import time as _time
 _key_cache = {"key": None, "ts": 0}
 
 def FMP_API_KEY():
@@ -51,18 +46,14 @@ def FMP_API_KEY():
 
 st.set_page_config(page_title="MarketLens", layout="wide", initial_sidebar_state="collapsed")
 
-# ── Fonts ──────────────────────────────────────────────────────────────────────
 st.markdown(
     '<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">',
     unsafe_allow_html=True
 )
 
-# ── Global styles ──────────────────────────────────────────────────────────────
-# ── Theme state ───────────────────────────────────────────────────────────────
 if "theme" not in st.session_state:
     st.session_state.theme = "dark"
 
-# Theme variables
 if st.session_state.theme == "dark":
     T = {
         "bg":          "#0a0d16",
@@ -87,8 +78,6 @@ if st.session_state.theme == "dark":
         "peers_cur":   "rgba(129,140,248,0.07)",
         "hero_color":  "#f1f0ff",
         "toggle_bg":   "rgba(255,255,255,0.06)",
-        "toggle_icon": "🌙",
-        "toggle_lbl":  "Dark",
     }
 else:
     T = {
@@ -114,8 +103,6 @@ else:
         "peers_cur":   "rgba(129,140,248,0.1)",
         "hero_color":  "#1e1b4b",
         "toggle_bg":   "rgba(0,0,0,0.06)",
-        "toggle_icon": "☀️",
-        "toggle_lbl":  "Light",
     }
 
 input_color = "#f1f0ff" if st.session_state.theme == "dark" else "#1e1b4b"
@@ -124,113 +111,28 @@ placeholder_color = "#4b5563" if st.session_state.theme == "dark" else "#94a3b8"
 st.markdown(f"""
 <style>
 * {{ font-family: 'Outfit', sans-serif; box-sizing: border-box; }}
-
-[data-testid="stAppViewContainer"] {{
-    background: {T["bg"]};
-    background-image: {T["bg_grad"]};
-}}
-[data-testid="stHeader"]            {{ background: transparent; }}
+[data-testid="stAppViewContainer"] {{ background: {T["bg"]}; background-image: {T["bg_grad"]}; }}
+[data-testid="stHeader"] {{ background: transparent; }}
 [data-testid="stMainBlockContainer"] {{ padding-top: 1.5rem; max-width: 1100px; }}
-
-/* ── Hero ── */
 .hero {{ text-align: center; padding: 2rem 0 1.8rem; }}
-.hero-title {{
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 64px; font-weight: 700; letter-spacing: -1px;
-    color: {T["hero_color"]}; line-height: 1; margin-bottom: 10px;
-}}
-.hero-title span {{
-    background: linear-gradient(135deg, #c4b5fd 0%, #818cf8 60%, #34d399 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}}
+.hero-title {{ font-family: 'Cormorant Garamond', serif; font-size: 64px; font-weight: 700; letter-spacing: -1px; color: {T["hero_color"]}; line-height: 1; margin-bottom: 10px; }}
+.hero-title span {{ background: linear-gradient(135deg, #c4b5fd 0%, #818cf8 60%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }}
 .hero-sub {{ font-size: 14px; color: {T["text_muted"]}; font-weight: 300; letter-spacing: 0.12em; text-transform: uppercase; }}
-
-/* ── Input ── */
-input,
-[data-testid="stTextInput"] input,
-[data-testid="stTextInput"] > div > div > input {{
-    background: {T["input_bg"]} !important;
-    border: 1px solid {T["input_border"]} !important;
-    border-radius: 14px !important;
-    color: {input_color} !important;
-    caret-color: #a78bfa !important;
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 15px !important; font-weight: 400 !important;
-    padding: 14px 18px !important;
-    transition: border-color 0.25s, box-shadow 0.25s !important;
-}}
-input:focus,
-[data-testid="stTextInput"] input:focus {{
-    border-color: rgba(139,92,246,0.6) !important;
-    box-shadow: 0 0 0 3px rgba(139,92,246,0.12) !important;
-    background: {T["input_bg_f"]} !important;
-    outline: none !important;
-}}
-input::placeholder,
-[data-testid="stTextInput"] input::placeholder {{ color: {placeholder_color} !important; }}
-
-/* ── Back button ── */
-button[kind="secondary"],
-[data-testid="stButton"]:has(button[data-testid*="back"]) > button {{
-    background: transparent !important;
-    color: {T["text_muted"]} !important;
-    border: 1px solid {T["card_border"]} !important;
-    border-radius: 10px !important;
-    font-size: 13px !important;
-    height: 38px !important;
-    padding: 0 16px !important;
-    margin-bottom: 16px !important;
-}}
-
-/* ── Analyse Button ── */
-[data-testid="stButton"] > button {{
-    background: linear-gradient(135deg, #7c3aed, #6366f1) !important;
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 14px !important;
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 14px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.05em !important;
-    padding: 0 28px !important;
-    height: 52px !important;
-    transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s !important;
-}}
-[data-testid="stButton"] > button:hover {{
-    opacity: 0.92 !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(124,58,237,0.35) !important;
-}}
-
-/* ── Autocomplete dropdown ── */
-.ac-drop {{
-    background: {T["ac_bg"]}; border: 1px solid {T["ac_border"]};
-    border-radius: 14px; overflow: hidden; margin-top: -8px; margin-bottom: 16px;
-    box-shadow: 0 16px 40px rgba(0,0,0,0.2);
-}}
-.ac-item {{
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 11px 18px; cursor: pointer;
-    border-bottom: 1px solid {T["ac_item_b"]}; transition: background 0.15s;
-}}
+input, [data-testid="stTextInput"] input, [data-testid="stTextInput"] > div > div > input {{ background: {T["input_bg"]} !important; border: 1px solid {T["input_border"]} !important; border-radius: 14px !important; color: {input_color} !important; caret-color: #a78bfa !important; font-family: 'Outfit', sans-serif !important; font-size: 15px !important; font-weight: 400 !important; padding: 14px 18px !important; transition: border-color 0.25s, box-shadow 0.25s !important; }}
+input:focus, [data-testid="stTextInput"] input:focus {{ border-color: rgba(139,92,246,0.6) !important; box-shadow: 0 0 0 3px rgba(139,92,246,0.12) !important; background: {T["input_bg_f"]} !important; outline: none !important; }}
+input::placeholder, [data-testid="stTextInput"] input::placeholder {{ color: {placeholder_color} !important; }}
+button[kind="secondary"], [data-testid="stButton"]:has(button[data-testid*="back"]) > button {{ background: transparent !important; color: {T["text_muted"]} !important; border: 1px solid {T["card_border"]} !important; border-radius: 10px !important; font-size: 13px !important; height: 38px !important; padding: 0 16px !important; margin-bottom: 16px !important; }}
+[data-testid="stButton"] > button {{ background: linear-gradient(135deg, #7c3aed, #6366f1) !important; color: #ffffff !important; border: none !important; border-radius: 14px !important; font-family: 'Outfit', sans-serif !important; font-size: 14px !important; font-weight: 600 !important; letter-spacing: 0.05em !important; padding: 0 28px !important; height: 52px !important; transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s !important; }}
+[data-testid="stButton"] > button:hover {{ opacity: 0.92 !important; transform: translateY(-1px) !important; box-shadow: 0 6px 20px rgba(124,58,237,0.35) !important; }}
+.ac-drop {{ background: {T["ac_bg"]}; border: 1px solid {T["ac_border"]}; border-radius: 14px; overflow: hidden; margin-top: -8px; margin-bottom: 16px; box-shadow: 0 16px 40px rgba(0,0,0,0.2); }}
+.ac-item {{ display: flex; justify-content: space-between; align-items: center; padding: 11px 18px; cursor: pointer; border-bottom: 1px solid {T["ac_item_b"]}; transition: background 0.15s; }}
 .ac-item:last-child {{ border-bottom: none; }}
 .ac-item:hover {{ background: rgba(139,92,246,0.1); }}
-.ac-sym  {{ font-weight: 600; font-size: 14px; color: #818cf8; }}
+.ac-sym {{ font-weight: 600; font-size: 14px; color: #818cf8; }}
 .ac-name {{ font-size: 13px; color: {T["text_muted"]}; font-weight: 300; }}
 .ac-type {{ font-size: 11px; color: {T["text_dim"]}; background: {T["card_bg"]}; padding: 2px 8px; border-radius: 6px; }}
-
-/* ── Company card ── */
-.co-card {{
-    background: {T["card_bg"]}; border: 1px solid {T["card_border"]};
-    border-radius: 20px; padding: 28px 32px; margin-bottom: 28px;
-    display: flex; justify-content: space-between; align-items: flex-start;
-    flex-wrap: wrap; gap: 20px; position: relative; overflow: hidden;
-    box-shadow: 0 2px 20px rgba(0,0,0,0.08);
-}}
-.co-card::before {{
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(139,92,246,0.6), rgba(52,211,153,0.4), transparent);
-}}
+.co-card {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 20px; padding: 28px 32px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 20px; position: relative; overflow: hidden; box-shadow: 0 2px 20px rgba(0,0,0,0.08); }}
+.co-card::before {{ content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(139,92,246,0.6), rgba(52,211,153,0.4), transparent); }}
 .co-name {{ font-family: 'Cormorant Garamond', serif; font-size: 30px; font-weight: 700; color: {T["text_primary"]}; letter-spacing: -0.3px; }}
 .co-sym {{ font-size: 12px; font-weight: 500; color: #818cf8; background: rgba(129,140,248,0.12); padding: 3px 10px; border-radius: 6px; margin-left: 10px; vertical-align: middle; letter-spacing: 0.06em; }}
 .co-meta {{ font-size: 13px; color: {T["text_muted"]}; margin-top: 6px; font-weight: 300; }}
@@ -238,33 +140,14 @@ button[kind="secondary"],
 .price-chg {{ font-size: 14px; font-weight: 400; text-align: right; margin-top: 4px; }}
 .up   {{ color: #34d399; }}
 .down {{ color: #f87171; }}
-
-/* ── Badges ── */
-.bdg {{
-    display: inline-block; font-size: 10px; font-weight: 600;
-    letter-spacing: 0.12em; padding: 4px 12px; border-radius: 20px;
-    margin-top: 10px; text-transform: uppercase;
-}}
+.bdg {{ display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; padding: 4px 12px; border-radius: 20px; margin-top: 10px; text-transform: uppercase; }}
 .bdg-buy  {{ background: rgba(52,211,153,0.12);  color: #34d399; border: 1px solid rgba(52,211,153,0.25); }}
 .bdg-hold {{ background: rgba(251,191,36,0.12);  color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }}
 .bdg-sell {{ background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.25); }}
 .bdg-etf  {{ background: rgba(129,140,248,0.12); color: #a5b4fc; border: 1px solid rgba(129,140,248,0.25); }}
 .bdg-stock{{ background: rgba(52,211,153,0.08);  color: #6ee7b7; border: 1px solid rgba(52,211,153,0.18); }}
-
-/* ── Section title ── */
-.sec-ttl {{
-    font-family: 'Outfit', sans-serif;
-    font-size: 10px; font-weight: 600; letter-spacing: 0.18em;
-    text-transform: uppercase; color: #7c3aed;
-    margin: 32px 0 14px;
-    display: flex; align-items: center; gap: 12px;
-}}
-.sec-ttl::after {{
-    content: ''; flex: 1; height: 1px;
-    background: linear-gradient(90deg, rgba(124,58,237,0.25), transparent);
-}}
-
-/* ── Metric cards ── */
+.sec-ttl {{ font-family: 'Outfit', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #7c3aed; margin: 32px 0 14px; display: flex; align-items: center; gap: 12px; }}
+.sec-ttl::after {{ content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(124,58,237,0.25), transparent); }}
 .mc {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 16px; padding: 18px 20px; margin-bottom: 12px; position: relative; transition: border-color 0.2s, background 0.2s; }}
 .mc:hover {{ border-color: rgba(124,58,237,0.25); background: {T["card_hover"]}; }}
 .mc-bar {{ position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px; border-radius: 0 3px 3px 0; }}
@@ -274,31 +157,23 @@ button[kind="secondary"],
 .mc.good .mc-val {{ color: #34d399; }}
 .mc.warn .mc-val {{ color: #fbbf24; }}
 .mc.bad  .mc-val {{ color: #f87171; }}
-
-/* ── Overview grid ── */
 .ov {{ display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 6px; }}
 .ov-i {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 14px; padding: 16px 18px; transition: border-color 0.2s; }}
 .ov-i:hover {{ border-color: rgba(124,58,237,0.2); }}
 .ov-l {{ font-size: 10px; color: {T["text_muted"]}; margin-bottom: 6px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }}
 .ov-v {{ font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: {T["text_sec"]}; }}
-
-/* ── Valuation card ── */
 .val-c {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 16px; padding: 24px 28px; margin-top: 6px; }}
 .val-r {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }}
 .val-l {{ font-size: 13px; color: {T["text_muted"]}; font-weight: 300; }}
 .val-n {{ font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 600; color: {T["text_primary"]}; }}
 .bar-bg {{ height: 6px; background: {T["val_bar_bg"]}; border-radius: 6px; margin-top: 4px; }}
 .bar-fg {{ height: 6px; border-radius: 6px; }}
-
-/* ── News cards ── */
 .news-card {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 14px; padding: 16px 20px; margin-bottom: 10px; display: flex; gap: 16px; align-items: flex-start; transition: border-color 0.2s, background 0.2s; text-decoration: none; }}
 .news-card:hover {{ border-color: rgba(129,140,248,0.3); background: {T["card_hover"]}; }}
 .news-dot {{ width: 8px; height: 8px; border-radius: 50%; background: #818cf8; margin-top: 6px; flex-shrink: 0; }}
 .news-title {{ font-size: 14px; font-weight: 400; color: {T["text_sec"]}; line-height: 1.5; margin-bottom: 4px; }}
 .news-meta  {{ font-size: 11px; color: {T["text_muted"]}; font-weight: 300; }}
 .news-src   {{ color: #818cf8; font-weight: 500; }}
-
-/* ── Peers table ── */
 .peers-table {{ width: 100%; border-collapse: collapse; margin-top: 4px; }}
 .peers-table th {{ font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: {T["text_muted"]}; padding: 10px 14px; text-align: left; border-bottom: 1px solid {T["peers_border"]}; }}
 .peers-table td {{ font-size: 13px; color: {T["text_sec"]}; padding: 12px 14px; border-bottom: 1px solid {T["peers_td_b"]}; font-family: 'Outfit', sans-serif; }}
@@ -306,8 +181,6 @@ button[kind="secondary"],
 .peers-table tr:hover td {{ background: {T["peers_hover"]}; }}
 .peers-table .cur-row td {{ background: {T["peers_cur"]}; color: #818cf8; font-weight: 500; }}
 .peers-table .num {{ font-family: 'Cormorant Garamond', serif; font-size: 16px; }}
-
-/* ── Landing page cards ── */
 .idx-card {{ background: {T["card_bg"]}; border: 1px solid {T["card_border"]}; border-radius: 16px; padding: 22px 20px 18px; text-align: center; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }}
 .idx-card:hover {{ border-color: rgba(129,140,248,0.3); box-shadow: 0 4px 20px rgba(124,58,237,0.1); }}
 .idx-name  {{ font-size: 10px; color: {T["text_muted"]}; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 10px; font-weight: 600; }}
@@ -319,21 +192,9 @@ button[kind="secondary"],
 .mover-sym  {{ font-weight: 600; font-size: 14px; color: {T["text_sec"]}; }}
 .mover-name {{ font-size: 11px; color: {T["text_muted"]}; margin-top: 2px; font-weight: 300; }}
 .mover-chg  {{ font-size: 14px; font-weight: 500; }}
-
-/* ── Custom loading spinner ── */
-.ml-loader {{
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    padding: 60px 0;
-}}
-.ml-chart {{
-    display: flex; align-items: flex-end; gap: 5px; height: 60px; margin-bottom: 20px;
-}}
-.ml-bar {{
-    width: 8px; border-radius: 4px 4px 0 0;
-    background: linear-gradient(180deg, #818cf8, #6366f1);
-    animation: mlrise 1.2s ease-in-out infinite;
-}}
+.ml-loader {{ display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0; }}
+.ml-chart {{ display: flex; align-items: flex-end; gap: 5px; height: 60px; margin-bottom: 20px; }}
+.ml-bar {{ width: 8px; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, #818cf8, #6366f1); animation: mlrise 1.2s ease-in-out infinite; }}
 .ml-bar:nth-child(1) {{ animation-delay: 0s;    height: 20px; }}
 .ml-bar:nth-child(2) {{ animation-delay: 0.1s;  height: 35px; }}
 .ml-bar:nth-child(3) {{ animation-delay: 0.2s;  height: 50px; }}
@@ -341,11 +202,6 @@ button[kind="secondary"],
 .ml-bar:nth-child(5) {{ animation-delay: 0.4s;  height: 55px; }}
 .ml-bar:nth-child(6) {{ animation-delay: 0.5s;  height: 30px; }}
 .ml-bar:nth-child(7) {{ animation-delay: 0.6s;  height: 45px; }}
-.ml-line {{
-    position: absolute; top: 10px; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, transparent, #34d399, transparent);
-    animation: mlsweep 1.2s ease-in-out infinite;
-}}
 @keyframes mlrise {{
     0%, 100% {{ transform: scaleY(0.4); opacity: 0.4; }}
     50%       {{ transform: scaleY(1);   opacity: 1;   }}
@@ -355,61 +211,26 @@ button[kind="secondary"],
     50%  {{ opacity: 1; }}
     100% {{ transform: translateX(100%);  opacity: 0; }}
 }}
-.ml-txt {{
-    font-size: 13px; color: #64748b; letter-spacing: 0.12em;
-    text-transform: uppercase; font-weight: 400;
-    animation: mlfade 1.5s ease-in-out infinite;
-}}
+.ml-txt {{ font-size: 13px; color: #64748b; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 400; animation: mlfade 1.5s ease-in-out infinite; }}
 @keyframes mlfade {{
     0%, 100% {{ opacity: 0.4; }}
     50%       {{ opacity: 1;   }}
 }}
-/* Hide default streamlit spinner */
 [data-testid="stSpinner"] {{ display: none !important; }}
-
-/* ── Spinner ── */
-[data-testid="stSpinner"] {{ display: none !important; }}
-
-/* ── Toggle button ── */
-.theme-toggle {{
-    position: fixed; top: 14px; right: 20px; z-index: 9999;
-    background: {T["toggle_bg"]}; border: 1px solid {T["card_border"]};
-    border-radius: 20px; padding: 6px 14px;
-    font-size: 12px; color: {T["text_muted"]}; cursor: pointer;
-    backdrop-filter: blur(10px); transition: all 0.2s;
-    display: flex; align-items: center; gap: 6px;
-}}
-
 #MainMenu, footer, header {{ visibility: hidden; }}
 div[data-testid="column"] {{ padding: 0 5px; }}
-
-/* ── Mobile responsiveness ── */
 @media (max-width: 768px) {{
     .hero-title {{ font-size: 38px; letter-spacing: -0.5px; }}
-    .hero-sub {{ font-size: 11px; }}
     .co-card {{ padding: 18px 16px; flex-direction: column; }}
     .co-name {{ font-size: 20px; }}
     .price-val {{ font-size: 26px; text-align: left; }}
     .price-chg {{ text-align: left; }}
     .ov {{ grid-template-columns: repeat(2,1fr); gap: 8px; }}
-    .ov-v {{ font-size: 15px; }}
-    .ov-l {{ font-size: 10px; }}
-    .idx-card {{ padding: 14px 12px; }}
     .idx-price {{ font-size: 20px; }}
-    .idx-name {{ font-size: 9px; }}
-    .idx-desc {{ font-size: 11px; }}
     .mc-val {{ font-size: 20px; }}
-    .mc-lbl {{ font-size: 10px; }}
-    .mc-sub {{ font-size: 11px; }}
-    .news-title {{ font-size: 13px; line-height: 1.5; }}
-    .sec-ttl {{ font-size: 10px; }}
     .about-grid {{ grid-template-columns: 1fr !important; }}
     .peers-table {{ overflow-x: auto; display: block; white-space: nowrap; }}
     .peers-table th, .peers-table td {{ padding: 8px 10px; font-size: 11px; }}
-    .mover-card {{ padding: 10px 12px; }}
-    .mover-sym {{ font-size: 13px; }}
-    .val-c {{ padding: 18px 16px; }}
-    .val-n {{ font-size: 17px; }}
     div[data-testid="column"] {{ padding: 0 3px; }}
     [data-testid="stMainBlockContainer"] {{ padding-left: 10px !important; padding-right: 10px !important; }}
     [data-testid="stButton"] > button {{ height: 46px !important; font-size: 13px !important; padding: 0 16px !important; }}
@@ -419,7 +240,6 @@ div[data-testid="column"] {{ padding: 0 5px; }}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
 def fmt_big(n):
     if pd.isna(n): return "N/A"
     if abs(n) >= 1e12: return f"${n/1e12:.2f}T"
@@ -439,7 +259,7 @@ def mcard(label, value, sub="", accent="#7c3aed", q=""):
     display_val = value
     if value in ("N/A", "nan", "$nan", "$N/A"):
         display_val = "—"
-        q = ""  # no colour coding for missing
+        q = ""
     return f"""<div class="mc {q}">
     <div class="mc-bar" style="background:{accent}"></div>
     <div class="mc-lbl">{label}</div>
@@ -459,34 +279,25 @@ def flatten(df):
         df.columns = df.columns.get_level_values(0)
     return df.loc[:, ~df.columns.duplicated()]
 
-def _session():
-    try:
-        return curl_requests.Session(impersonate="chrome")
-    except Exception:
-        return requests.Session()
-
 # ── Plotly theme ───────────────────────────────────────────────────────────────
 _PL = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Outfit", color="#94a3b8", size=12),
     margin=dict(l=10, r=10, t=10, b=40),
     xaxis=dict(showgrid=False, showline=False, tickfont=dict(size=11, color="#64748b")),
-    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.04)",
-               showline=False, tickfont=dict(size=11, color="#64748b")),
+    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.04)", showline=False, tickfont=dict(size=11, color="#64748b")),
     hovermode="x unified",
-    hoverlabel=dict(bgcolor="#1e2235", bordercolor="#334155",
-                    font=dict(family="Outfit", color="#f1f0ff", size=12)),
+    hoverlabel=dict(bgcolor="#1e2235", bordercolor="#334155", font=dict(family="Outfit", color="#f1f0ff", size=12)),
 )
 
 def chart_price(df, sym):
-    c = df["Close"].dropna()
+    col = "Close" if "Close" in df.columns else "close"
+    c = df[col].dropna()
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=c.index, y=c.values, mode="lines",
-        line=dict(color="#818cf8", width=2.5),
-        fill="tozeroy", fillcolor="rgba(129,140,248,0.06)",
-        hovertemplate="<b>$%{y:,.2f}</b><extra></extra>", name=sym,
-    ))
+    fig.add_trace(go.Scatter(x=c.index, y=c.values, mode="lines",
+        line=dict(color="#818cf8", width=2.5), fill="tozeroy",
+        fillcolor="rgba(129,140,248,0.06)",
+        hovertemplate="<b>$%{y:,.2f}</b><extra></extra>", name=sym))
     l = {**_PL}; l["height"] = 260; l["yaxis"] = {**_PL["yaxis"], "tickprefix": "$"}
     fig.update_layout(**l)
     return fig
@@ -494,11 +305,9 @@ def chart_price(df, sym):
 def chart_fcf(free_cf):
     cols = ["#34d399" if v >= 0 else "#f87171" for v in free_cf.values]
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=free_cf.index, y=free_cf.values/1e9,
+    fig.add_trace(go.Bar(x=free_cf.index, y=free_cf.values/1e9,
         marker_color=cols, marker_line_width=0,
-        hovertemplate="<b>$%{y:.2f}B</b><extra></extra>",
-    ))
+        hovertemplate="<b>$%{y:.2f}B</b><extra></extra>"))
     l = {**_PL}; l["height"] = 220
     l["yaxis"] = {**_PL["yaxis"], "tickprefix":"$", "ticksuffix":"B"}
     fig.update_layout(**l)
@@ -506,17 +315,12 @@ def chart_fcf(free_cf):
 
 def chart_scatter(ret_df, slope, r2, sym):
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=ret_df["Market"], y=ret_df["Stock"], mode="markers",
+    fig.add_trace(go.Scatter(x=ret_df["Market"], y=ret_df["Stock"], mode="markers",
         marker=dict(color="#818cf8", size=4, opacity=0.3),
-        hovertemplate="Market: %{x:.3f}<br>Stock: %{y:.3f}<extra></extra>",
-    ))
+        hovertemplate="Market: %{x:.3f}<br>Stock: %{y:.3f}<extra></extra>"))
     xs = np.linspace(ret_df["Market"].min(), ret_df["Market"].max(), 100)
-    fig.add_trace(go.Scatter(
-        x=xs, y=slope*xs, mode="lines",
-        line=dict(color="#34d399", width=2),
-        name=f"β fit  R²={r2:.3f}",
-    ))
+    fig.add_trace(go.Scatter(x=xs, y=slope*xs, mode="lines",
+        line=dict(color="#34d399", width=2), name=f"β fit  R²={r2:.3f}"))
     l = {**_PL}; l["height"] = 300
     l["xaxis"] = {**_PL["xaxis"], "title": "S&P 500 daily return"}
     l["yaxis"] = {**_PL["yaxis"], "title": f"{sym} daily return"}
@@ -524,49 +328,30 @@ def chart_scatter(ret_df, slope, r2, sym):
     fig.update_layout(**l)
     return fig
 
-
 def chart_revenue_earnings(income):
-    """Bar chart showing revenue and net income trends."""
-    rev = []
-    ni  = []
-    yrs = []
+    rev, ni, yrs = [], [], []
     for d in reversed(income):
         yr = str(d.get("calendarYear", d.get("date","")[:4]))
         yrs.append(yr)
         rev.append(d.get("revenue", 0) / 1e9)
         ni.append(d.get("netIncome", 0) / 1e9)
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=yrs, y=rev, name="Revenue",
-        marker_color="#818cf8", marker_line_width=0,
-        hovertemplate="Revenue: <b>$%{y:.2f}B</b><extra></extra>",
-    ))
-    fig.add_trace(go.Bar(
-        x=yrs, y=ni, name="Net Income",
-        marker_color="#34d399", marker_line_width=0,
-        hovertemplate="Net Income: <b>$%{y:.2f}B</b><extra></extra>",
-    ))
+    fig.add_trace(go.Bar(x=yrs, y=rev, name="Revenue", marker_color="#818cf8", marker_line_width=0, hovertemplate="Revenue: <b>$%{y:.2f}B</b><extra></extra>"))
+    fig.add_trace(go.Bar(x=yrs, y=ni, name="Net Income", marker_color="#34d399", marker_line_width=0, hovertemplate="Net Income: <b>$%{y:.2f}B</b><extra></extra>"))
     l = {**_PL}; l["height"] = 260; l["barmode"] = "group"
     l["yaxis"] = {**_PL["yaxis"], "tickprefix":"$", "ticksuffix":"B"}
-    l["legend"] = dict(font=dict(color="#94a3b8", size=12), bgcolor="rgba(0,0,0,0)",
-                       orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    l["legend"] = dict(font=dict(color="#94a3b8", size=12), bgcolor="rgba(0,0,0,0)", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     fig.update_layout(**l)
     return fig
 
 def chart_peers(peers_data, current_sym):
-    """Horizontal bar chart comparing peers on key metrics - sorted high to low."""
-    # Sort by gross margin descending
     sorted_data = sorted(peers_data, key=lambda d: d.get("grossMargin") or 0)
     syms = [d["symbol"] for d in sorted_data]
     gms  = [(d.get("grossMargin") or 0)*100 for d in sorted_data]
-
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=syms, x=gms, orientation="h", name="Gross Margin %",
+    fig.add_trace(go.Bar(y=syms, x=gms, orientation="h", name="Gross Margin %",
         marker_color=["#818cf8" if s == current_sym else "#334155" for s in syms],
-        marker_line_width=0,
-        hovertemplate="%{y}: <b>%{x:.1f}%</b><extra></extra>",
-    ))
+        marker_line_width=0, hovertemplate="%{y}: <b>%{x:.1f}%</b><extra></extra>"))
     l = {**_PL}; l["height"] = 200
     l["xaxis"] = {**_PL["xaxis"], "ticksuffix":"%"}
     l["yaxis"] = {**_PL["yaxis"], "showgrid": False}
@@ -576,7 +361,6 @@ def chart_peers(peers_data, current_sym):
 
 
 # ── FMP API ────────────────────────────────────────────────────────────────────
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def fmp_get(endpoint):
     key = FMP_API_KEY()
@@ -586,7 +370,6 @@ def fmp_get(endpoint):
         if r.status_code == 200:
             d = r.json()
             if isinstance(d, dict) and "Error Message" in d:
-                # Try other key
                 for k in FMP_KEYS:
                     if k != key:
                         r2 = requests.get(f"{FMP_BASE}/{endpoint}&apikey={k}", timeout=15)
@@ -602,7 +385,6 @@ def fmp_get(endpoint):
 
 @st.cache_data(ttl=60, show_spinner=False)
 def fmp_search(q):
-    """Search tickers by name or symbol - tries multiple endpoints."""
     _k = FMP_API_KEY()
     endpoints = [
         f"{FMP_BASE}/search?query={q}&limit=6&apikey={_k}",
@@ -633,20 +415,29 @@ def fetch_financials(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_prices(sym):
-    for use_session in [True, False]:
-        try:
-            t = yf.Ticker(sym, session=_session()) if use_session else yf.Ticker(sym)
-            p5 = flatten(t.history(period="5y"))
-            p1 = flatten(t.history(period="1y"))
-            if not p5.empty:
+    """Use FMP historical prices — reliable on Streamlit Cloud, no yfinance needed."""
+    try:
+        _k = FMP_API_KEY()
+        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{sym}?apikey={_k}"
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json().get("historical", [])
+            if data:
+                df = pd.DataFrame(data)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date").sort_index()
+                df = df.rename(columns={"close": "Close", "open": "Open",
+                                        "high": "High", "low": "Low", "volume": "Volume"})
+                now = pd.Timestamp.now()
+                p5 = df[df.index >= now - pd.DateOffset(years=5)]
+                p1 = df[df.index >= now - pd.DateOffset(years=1)]
                 return p5, p1
-        except Exception:
-            pass
+    except Exception:
+        pass
     return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_news(sym):
-    """Fetch latest news via Yahoo Finance RSS — no API key needed."""
     import xml.etree.ElementTree as ET
     url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={sym}&region=US&lang=en-US"
     try:
@@ -660,20 +451,13 @@ def fetch_news(sym):
                 link    = item.findtext("link", "#")
                 pubdate = item.findtext("pubDate", "")[:16] if item.findtext("pubDate") else ""
                 source  = item.findtext("source", "Yahoo Finance")
-                news.append({
-                    "title": title, "url": link,
-                    "publishedDate": pubdate, "site": source
-                })
+                news.append({"title": title, "url": link, "publishedDate": pubdate, "site": source})
             if news:
                 return news
     except Exception:
         pass
-    # Fallback to FMP
     try:
-        r = requests.get(
-            f"https://financialmodelingprep.com/api/v3/stock_news?tickers={sym}&limit=5&apikey={FMP_API_KEY()}",
-            timeout=10
-        )
+        r = requests.get(f"https://financialmodelingprep.com/api/v3/stock_news?tickers={sym}&limit=5&apikey={FMP_API_KEY()}", timeout=10)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
@@ -684,8 +468,6 @@ def fetch_news(sym):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_peers(sym):
-    """Fetch stock peers — tries API first, then builds from sector/industry."""
-    # Try FMP peers API
     _k = FMP_API_KEY()
     urls = [
         f"https://financialmodelingprep.com/api/v4/stock_peers?symbol={sym}&apikey={_k}",
@@ -696,8 +478,7 @@ def fetch_peers(sym):
             r = requests.get(url, timeout=10)
             if r.status_code == 200:
                 data = r.json()
-                if not data:
-                    continue
+                if not data: continue
                 if isinstance(data, list) and len(data) > 0:
                     first = data[0]
                     if isinstance(first, dict):
@@ -707,167 +488,114 @@ def fetch_peers(sym):
                     else:
                         peers = []
                     peers = [p for p in peers if p != sym]
-                    if peers:
-                        return peers[:4]
+                    if peers: return peers[:4]
         except Exception:
             pass
-
-    # If API fails — use FMP screener to find companies in same sector/industry
     try:
         prof = fetch_profile(sym)
-        sector   = prof.get("sector", "")
-        industry = prof.get("industry", "")
+        sector = prof.get("sector", "")
         exchange = prof.get("exchangeShortName", "NASDAQ")
         if sector:
-            screen_url = (
-                f"https://financialmodelingprep.com/api/v3/stock-screener"
-                f"?sector={requests.utils.quote(sector)}"
-                f"&exchange={exchange}&limit=10&apikey={FMP_API_KEY()}"
-            )
+            screen_url = (f"https://financialmodelingprep.com/api/v3/stock-screener"
+                          f"?sector={requests.utils.quote(sector)}&exchange={exchange}&limit=10&apikey={FMP_API_KEY()}")
             r = requests.get(screen_url, timeout=10)
             if r.status_code == 200:
                 data = r.json()
                 if isinstance(data, list):
-                    peers = [d.get("symbol") for d in data
-                             if d.get("symbol") and d.get("symbol") != sym]
-                    if peers:
-                        return peers[:4]
+                    peers = [d.get("symbol") for d in data if d.get("symbol") and d.get("symbol") != sym]
+                    if peers: return peers[:4]
     except Exception:
         pass
-    # Fallback: hardcoded peers for common tickers
     fallbacks = {
-        # Tech
-        "AAPL": ["MSFT","GOOGL","META","AMZN"],
-        "MSFT": ["AAPL","GOOGL","META","ORCL"],
-        "GOOGL": ["MSFT","META","AAPL","AMZN"],
-        "GOOG": ["MSFT","META","AAPL","AMZN"],
-        "AMZN": ["MSFT","GOOGL","AAPL","WMT"],
-        "META": ["GOOGL","SNAP","PINS","TWTR"],
-        "NVDA": ["AMD","INTC","QCOM","AVGO"],
-        "AMD":  ["NVDA","INTC","QCOM","AVGO"],
-        "INTC": ["NVDA","AMD","QCOM","TXN"],
-        "ORCL": ["MSFT","SAP","CRM","NOW"],
-        "CRM":  ["ORCL","SAP","NOW","WDAY"],
-        "NFLX": ["DIS","PARA","WBD","SPOT"],
-        # EV / Auto
-        "TSLA": ["F","GM","NIO","RIVN"],
-        "F":    ["GM","TSLA","STLA","TM"],
-        "GM":   ["F","TSLA","STLA","TM"],
-        # Retail
-        "WMT":  ["COST","TGT","AMZN","KR"],
-        "COST": ["WMT","TGT","BJ","AMZN"],
-        "TGT":  ["WMT","COST","KR","AMZN"],
-        "AMZN": ["WMT","COST","GOOGL","MSFT"],
-        "KR":   ["WMT","TGT","SFM","ACI"],
-        # Finance
-        "JPM":  ["BAC","WFC","GS","C"],
-        "BAC":  ["JPM","WFC","C","GS"],
-        "WFC":  ["JPM","BAC","C","USB"],
-        "GS":   ["MS","JPM","BAC","C"],
-        "MS":   ["GS","JPM","BAC","C"],
-        "V":    ["MA","AXP","PYPL","SQ"],
-        "MA":   ["V","AXP","PYPL","SQ"],
-        # Healthcare
-        "JNJ":  ["PFE","MRK","ABT","BMY"],
-        "PFE":  ["JNJ","MRK","ABBV","BMY"],
-        "MRK":  ["PFE","JNJ","ABBV","LLY"],
-        "UNH":  ["CVS","CI","HUM","CNC"],
-        # Energy
-        "XOM":  ["CVX","COP","BP","SHEL"],
-        "CVX":  ["XOM","COP","BP","SHEL"],
-        # Consumer
-        "KO":   ["PEP","MNST","KDRN","TAP"],
-        "PEP":  ["KO","MNST","TAP","BUD"],
-        "MCD":  ["YUM","QSR","SBUX","DPZ"],
-        "SBUX": ["MCD","DNKN","QSR","CMG"],
-        # Telecom
-        "T":    ["VZ","TMUS","CMCSA","CHTR"],
+        "AAPL": ["MSFT","GOOGL","META","AMZN"], "MSFT": ["AAPL","GOOGL","META","ORCL"],
+        "GOOGL": ["MSFT","META","AAPL","AMZN"], "GOOG": ["MSFT","META","AAPL","AMZN"],
+        "AMZN": ["MSFT","GOOGL","AAPL","WMT"],  "META": ["GOOGL","SNAP","PINS","NFLX"],
+        "NVDA": ["AMD","INTC","QCOM","AVGO"],    "AMD":  ["NVDA","INTC","QCOM","AVGO"],
+        "TSLA": ["F","GM","NIO","RIVN"],         "WMT":  ["COST","TGT","AMZN","KR"],
+        "COST": ["WMT","TGT","BJ","AMZN"],       "TGT":  ["WMT","COST","KR","AMZN"],
+        "JPM":  ["BAC","WFC","GS","C"],          "BAC":  ["JPM","WFC","C","GS"],
+        "GS":   ["MS","JPM","BAC","C"],          "MS":   ["GS","JPM","BAC","C"],
+        "JNJ":  ["PFE","MRK","ABT","BMY"],       "PFE":  ["JNJ","MRK","ABBV","BMY"],
+        "XOM":  ["CVX","COP","BP","SHEL"],       "CVX":  ["XOM","COP","BP","SHEL"],
+        "KO":   ["PEP","MNST","TAP","BUD"],      "PEP":  ["KO","MNST","TAP","BUD"],
+        "MCD":  ["YUM","QSR","SBUX","DPZ"],      "SBUX": ["MCD","QSR","CMG","DPZ"],
+        "V":    ["MA","AXP","PYPL","SQ"],        "MA":   ["V","AXP","PYPL","SQ"],
+        "UNH":  ["CVS","CI","HUM","CNC"],        "T":    ["VZ","TMUS","CMCSA","CHTR"],
         "VZ":   ["T","TMUS","CMCSA","CHTR"],
     }
     result = fallbacks.get(sym, [])
     if not result:
-        # Last resort: get sector peers from FMP profile-based search
         try:
             prof = fetch_profile(sym)
             sector = prof.get("sector","")
-            if sector:
-                sector_map = {
-                    "Technology": ["AAPL","MSFT","GOOGL","META","NVDA"],
-                    "Consumer Cyclical": ["AMZN","TSLA","HD","NKE","MCD"],
-                    "Consumer Defensive": ["WMT","COST","PG","KO","PEP"],
-                    "Financial Services": ["JPM","BAC","WFC","GS","MS"],
-                    "Healthcare": ["JNJ","UNH","PFE","MRK","ABT"],
-                    "Energy": ["XOM","CVX","COP","SLB","EOG"],
-                    "Industrials": ["HON","GE","MMM","CAT","BA"],
-                    "Communication Services": ["GOOGL","META","NFLX","DIS","T"],
-                    "Real Estate": ["AMT","PLD","EQIX","CCI","SPG"],
-                    "Utilities": ["NEE","DUK","SO","D","AEP"],
-                    "Basic Materials": ["LIN","APD","SHW","FCX","NEM"],
-                }
-                sector_peers = sector_map.get(sector, [])
-                result = [p for p in sector_peers if p != sym][:4]
+            sector_map = {
+                "Technology": ["AAPL","MSFT","GOOGL","META","NVDA"],
+                "Consumer Cyclical": ["AMZN","TSLA","HD","NKE","MCD"],
+                "Consumer Defensive": ["WMT","COST","PG","KO","PEP"],
+                "Financial Services": ["JPM","BAC","WFC","GS","MS"],
+                "Healthcare": ["JNJ","UNH","PFE","MRK","ABT"],
+                "Energy": ["XOM","CVX","COP","SLB","EOG"],
+                "Industrials": ["HON","GE","MMM","CAT","BA"],
+                "Communication Services": ["GOOGL","META","NFLX","DIS","T"],
+            }
+            sector_peers = sector_map.get(sector, [])
+            result = [p for p in sector_peers if p != sym][:4]
         except Exception:
             pass
     return result
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_market():
-    for use_session in [True, False]:
-        try:
-            kwargs = {"auto_adjust": True, "progress": False, "multi_level_index": False}
-            if use_session:
-                kwargs["session"] = _session()
-            mkt = flatten(yf.download("^GSPC", period="10y", **kwargs))
-            rf  = flatten(yf.download("^TNX",  period="1mo", **kwargs))
-            if not mkt.empty:
-                return mkt, rf
-        except Exception:
-            pass
-    return pd.DataFrame(), pd.DataFrame()
-
+    """Use FMP for S&P 500 and TNX — works on Streamlit Cloud."""
+    try:
+        _k = FMP_API_KEY()
+        mkt = pd.DataFrame()
+        rf  = pd.DataFrame()
+        r = requests.get(f"https://financialmodelingprep.com/api/v3/historical-price-full/%5EGSPC?apikey={_k}", timeout=15)
+        if r.status_code == 200:
+            data = r.json().get("historical", [])
+            if data:
+                mkt = pd.DataFrame(data)
+                mkt["date"] = pd.to_datetime(mkt["date"])
+                mkt = mkt.set_index("date").sort_index()
+                mkt = mkt.rename(columns={"close": "Close"})
+        r2 = requests.get(f"https://financialmodelingprep.com/api/v3/historical-price-full/%5ETNX?apikey={_k}", timeout=15)
+        if r2.status_code == 200:
+            data2 = r2.json().get("historical", [])
+            if data2:
+                rf = pd.DataFrame(data2)
+                rf["date"] = pd.to_datetime(rf["date"])
+                rf = rf.set_index("date").sort_index()
+                rf = rf.rename(columns={"close": "Close"})
+        return mkt, rf
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_market_indices():
-    """Fetch major market indices."""
-    indices = {
-        "S&P 500": "^GSPC",
-        "NASDAQ":  "^IXIC",
-        "Dow Jones": "^DJI",
-        "VIX": "^VIX",
-    }
+    """Use FMP for market indices — works on Streamlit Cloud."""
+    indices = {"S&P 500": "%5EGSPC", "NASDAQ": "%5EIXIC", "Dow Jones": "%5EDJI", "VIX": "%5EVIX"}
     results = []
-    sessions_to_try = []
-    try:
-        sessions_to_try.append(_session())
-    except Exception:
-        pass
-    sessions_to_try.append(None)  # None = no custom session (plain yfinance)
-    for sess in sessions_to_try:
-        results = []
+    _k = FMP_API_KEY()
+    for name_idx, sym_idx in indices.items():
         try:
-            for name_idx, sym_idx in indices.items():
-                try:
-                    t = yf.Ticker(sym_idx, session=sess) if sess else yf.Ticker(sym_idx)
-                    h = flatten(t.history(period="5d"))
-                    if not h.empty and len(h) >= 2:
-                        cur = float(h["Close"].iloc[-1])
-                        prev_c = float(h["Close"].iloc[-2])
-                        chg = cur - prev_c
-                        chgp = (chg / prev_c) * 100
-                        results.append({"name": name_idx, "price": cur, "change": chg, "changePct": chgp})
-                except Exception:
-                    pass
+            url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{sym_idx}?timeseries=5&apikey={_k}"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                hist = r.json().get("historical", [])
+                if len(hist) >= 2:
+                    cur    = float(hist[0]["close"])
+                    prev_c = float(hist[1]["close"])
+                    chg    = cur - prev_c
+                    chgp   = (chg / prev_c) * 100
+                    results.append({"name": name_idx, "price": cur, "change": chg, "changePct": chgp})
         except Exception:
             pass
-        if results:
-            break
     return results
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_general_news():
-    """Fetch general market news via Yahoo Finance RSS."""
     import xml.etree.ElementTree as ET
-    # Use multiple market-related RSS feeds
     feeds = [
         "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US",
         "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^DJI&region=US&lang=en-US",
@@ -886,15 +614,13 @@ def fetch_general_news():
                     source  = item.findtext("source", "Yahoo Finance")
                     if title and title not in seen:
                         seen.add(title)
-                        news.append({"title": title, "url": link,
-                                     "publishedDate": pubdate, "site": source})
+                        news.append({"title": title, "url": link, "publishedDate": pubdate, "site": source})
         except Exception:
             pass
     return news[:8]
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_top_movers():
-    """Fetch top gaining and losing stocks."""
     gainers_url = f"https://financialmodelingprep.com/api/v3/gainers?apikey={FMP_API_KEY()}"
     losers_url  = f"https://financialmodelingprep.com/api/v3/losers?apikey={FMP_API_KEY()}"
     gainers, losers = [], []
@@ -914,7 +640,6 @@ def fetch_top_movers():
 
 
 # ── Analysis ───────────────────────────────────────────────────────────────────
-
 def exs(data, key):
     if not data: return pd.Series(dtype=float)
     yrs = [str(d.get("calendarYear", d.get("date","")[:4])) for d in data]
@@ -952,6 +677,7 @@ def addl(inc, bal, cf, cp):
 def capm(p5):
     E={"beta":np.nan,"risk_free_rate":np.nan,"market_return":np.nan,
        "expected_return":np.nan,"slope":np.nan,"r_squared":np.nan}
+    if p5.empty or "Close" not in p5.columns: return E
     sr=p5["Close"].pct_change().dropna()
     if sr.empty: return E
     try: sr.index=sr.index.tz_localize(None)
@@ -979,12 +705,10 @@ def fcf(cf):
     cap = exs(cf,"capitalExpenditure")
     cap_adj = cap.apply(lambda x: -abs(x) if pd.notna(x) else x)
     free = ocf + cap_adj
-    # Use last non-null value regardless of year
     return ocf, cap_adj, free
 
 def wacc(profile, inc, bal, cf, er):
     mc = float(profile.get("mktCap") or 0)
-    # Multiple fallbacks for market cap
     if mc == 0 and inc:
         eps_w = float(inc[0].get("eps") or 0)
         ni_w  = float(inc[0].get("netIncome") or 0)
@@ -992,8 +716,7 @@ def wacc(profile, inc, bal, cf, er):
         if eps_w and ni_w and pr_w:
             mc = (ni_w / eps_w) * pr_w
     if mc == 0:
-        shares = float(profile.get("sharesOutstanding") or
-                       profile.get("shares") or 0)
+        shares = float(profile.get("sharesOutstanding") or profile.get("shares") or 0)
         pr_w   = float(profile.get("price") or 0)
         if shares and pr_w:
             mc = shares * pr_w
@@ -1017,9 +740,13 @@ def dcf(profile, free_cf, wv, cp):
     if fc.empty or pd.isna(wv) or wv<=0:
         return {"fcf_latest":np.nan,"firm_value":np.nan,"intrinsic_price":np.nan,"current_price":cp}
     fl=float(fc.iloc[-1])
-    mc = profile.get("mktCap", np.nan)
-    if pd.isna(mc) or mc == 0:
-        mc = profile.get("marketCap", np.nan)
+    mc = float(profile.get("mktCap") or 0)
+    if mc == 0:
+        shares = float(profile.get("sharesOutstanding") or profile.get("shares") or 0)
+        pr_w = float(profile.get("price") or 0)
+        if shares and pr_w:
+            mc = shares * pr_w
+    mc = mc if mc > 0 else np.nan
     sh=mc/cp if pd.notna(mc) and mc > 0 and cp else np.nan
     g=0.03; yrs=5; tg=0.02
     pf=[fl*(1+g)**y for y in range(1,yrs+1)]
@@ -1032,8 +759,6 @@ def dcf(profile, free_cf, wv, cp):
 
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
-
-# Theme toggle button
 t_col1, t_col2, t_col3 = st.columns([6, 1, 1])
 with t_col3:
     icon = "🌙 Dark" if st.session_state.theme == "light" else "☀️ Light"
@@ -1051,13 +776,9 @@ st.markdown("""
           <stop offset="0%" style="stop-color:#818cf8"/>
           <stop offset="100%" style="stop-color:#34d399"/>
         </linearGradient>
-        <clipPath id="lens-clip">
-          <circle cx="26" cy="26" r="18"/>
-        </clipPath>
+        <clipPath id="lens-clip"><circle cx="26" cy="26" r="18"/></clipPath>
       </defs>
-      <!-- Lens circle -->
       <circle cx="26" cy="26" r="19" fill="rgba(129,140,248,0.08)" stroke="url(#lg1)" stroke-width="3"/>
-      <!-- Bar chart inside lens -->
       <g clip-path="url(#lens-clip)">
         <rect x="11" y="30" width="5" height="12" rx="1" fill="#818cf8" opacity="0.9"/>
         <rect x="18" y="22" width="5" height="20" rx="1" fill="#818cf8" opacity="0.9"/>
@@ -1065,7 +786,6 @@ st.markdown("""
         <rect x="32" y="18" width="5" height="24" rx="1" fill="#34d399" opacity="0.9"/>
         <rect x="39" y="23" width="5" height="19" rx="1" fill="#818cf8" opacity="0.9"/>
       </g>
-      <!-- Handle -->
       <line x1="40" y1="40" x2="57" y2="57" stroke="url(#lg1)" stroke-width="4" stroke-linecap="round"/>
     </svg>
   </div>
@@ -1073,20 +793,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Ticker search with autocomplete ───────────────────────────────────────────
 col_in, col_btn = st.columns([5, 1])
 with col_in:
-    query = st.text_input(
-        label="search",
-        value="",
-        placeholder="Enter a ticker symbol — e.g. AAPL, MSFT, TSLA, WMT",
-        label_visibility="collapsed",
-        key="search_input",
-    )
+    query = st.text_input(label="search", value="", placeholder="Enter a ticker symbol — e.g. AAPL, MSFT, TSLA, WMT", label_visibility="collapsed", key="search_input")
 with col_btn:
     analyse = st.button("Analyse →", use_container_width=True)
 
-# Show autocomplete suggestions
 selected_ticker = None
 if query and len(query) >= 1 and not analyse:
     results = fmp_search(query)
@@ -1100,41 +812,25 @@ if query and len(query) >= 1 and not analyse:
             btn_key = f"ac_{sym}"
             col_a, col_b = st.columns([6,1])
             with col_a:
-                st.markdown(f"""
-                <div class="ac-item">
-                  <div>
-                    <span class="ac-sym">{sym}</span>
-                    <span class="ac-name" style="margin-left:10px">{name}</span>
-                  </div>
-                  <span class="ac-type">{typ} · {exch}</span>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f'<div class="ac-item"><div><span class="ac-sym">{sym}</span><span class="ac-name" style="margin-left:10px">{name}</span></div><span class="ac-type">{typ} · {exch}</span></div>', unsafe_allow_html=True)
             with col_b:
                 if st.button("→", key=btn_key):
                     selected_ticker = sym
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Determine which ticker to use
 ticker_symbol = (selected_ticker or query).strip().upper()
 
-# Handle back button
 if st.session_state.get("go_home"):
     st.session_state.go_home = False
     st.rerun()
 
 if not analyse and not selected_ticker and not query:
-    # ── Landing page ─────────────────────────────────────────────────────────
-
-    # About section
     st.markdown("""
-    <div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);
-                border-radius:16px;padding:24px 28px;margin-bottom:8px;">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;
-                  color:#c4b5fd;margin-bottom:12px;">What is MarketLens?</div>
+    <div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);border-radius:16px;padding:24px 28px;margin-bottom:8px;">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#c4b5fd;margin-bottom:12px;">What is MarketLens?</div>
       <div style="font-size:13px;color:#94a3b8;line-height:1.9;font-weight:300;">
-        MarketLens is a data-driven stock analysis platform that helps you evaluate any publicly
-        traded company in seconds. Simply enter a ticker symbol (e.g. <b style="color:#e2e8f0">AAPL</b> for Apple,
-        <b style="color:#e2e8f0">MSFT</b> for Microsoft) and get a full financial breakdown including:
+        MarketLens is a data-driven stock analysis platform that helps you evaluate any publicly traded company in seconds.
+        Simply enter a ticker symbol (e.g. <b style="color:#e2e8f0">AAPL</b> for Apple, <b style="color:#e2e8f0">MSFT</b> for Microsoft) and get a full financial breakdown including:
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px;" class="about-grid">
         <div style="background:rgba(255,255,255,0.03);border-radius:10px;padding:12px 14px;">
@@ -1157,7 +853,6 @@ if not analyse and not selected_ticker and not query:
     gen_news = fetch_general_news()
     gainers, losers = fetch_top_movers()
 
-    # Market indices
     def idx_desc(name, chg):
         direction = "up" if chg >= 0 else "down"
         descs = {
@@ -1177,17 +872,8 @@ if not analyse and not selected_ticker and not query:
             sign = "+" if c >= 0 else ""
             desc = idx_desc(idx["name"], c)
             with cols[i]:
-                st.markdown(
-                    '<div class="idx-card">'
-                    '<div class="idx-name">' + idx["name"] + '</div>'
-                    '<div class="idx-price">' + f'{idx["price"]:,.2f}' + '</div>'
-                    '<div class="idx-chg" style="color:' + col + '">' + sign + f'{c:.2f}%' + '</div>'
-                    '<div class="idx-desc">' + desc + '</div>'
-                    '</div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<div class="idx-card"><div class="idx-name">' + idx["name"] + '</div><div class="idx-price">' + f'{idx["price"]:,.2f}' + '</div><div class="idx-chg" style="color:' + col + '">' + sign + f'{c:.2f}%' + '</div><div class="idx-desc">' + desc + '</div></div>', unsafe_allow_html=True)
 
-    # Top movers
     if gainers or losers:
         section("Top Movers Today")
         col_g, col_l = st.columns(2)
@@ -1199,16 +885,7 @@ if not analyse and not selected_ticker and not query:
                 chgp = g.get("changesPercentage", g.get("change",0))
                 pr   = g.get("price", 0)
                 chgp_val = float(str(chgp).replace("%","").replace("+","")) if chgp else 0
-                st.markdown(
-                    '<div class="mover-card">'
-                    '<div><div class="mover-sym">' + sym + '</div>'
-                    '<div class="mover-name">' + nm + '</div></div>'
-                    '<div><div class="mover-chg" style="color:#34d399">+'
-                    + f'{chgp_val:.2f}%' + '</div>'
-                    '<div style="font-size:11px;color:#64748b;text-align:right">$' + f'{float(pr):,.2f}' + '</div>'
-                    '</div></div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<div class="mover-card"><div><div class="mover-sym">' + sym + '</div><div class="mover-name">' + nm + '</div></div><div><div class="mover-chg" style="color:#34d399">+' + f'{chgp_val:.2f}%' + '</div><div style="font-size:11px;color:#64748b;text-align:right">$' + f'{float(pr):,.2f}' + '</div></div></div>', unsafe_allow_html=True)
         with col_l:
             st.markdown('<div style="font-size:11px;color:#f87171;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:10px;">Top Losers</div>', unsafe_allow_html=True)
             for l in losers:
@@ -1217,65 +894,33 @@ if not analyse and not selected_ticker and not query:
                 chgp = l.get("changesPercentage", l.get("change",0))
                 pr   = l.get("price", 0)
                 chgp_val = float(str(chgp).replace("%","").replace("+","").replace("-","")) if chgp else 0
-                st.markdown(
-                    '<div class="mover-card">'
-                    '<div><div class="mover-sym">' + sym + '</div>'
-                    '<div class="mover-name">' + nm + '</div></div>'
-                    '<div><div class="mover-chg" style="color:#f87171">-'
-                    + f'{chgp_val:.2f}%' + '</div>'
-                    '<div style="font-size:11px;color:#64748b;text-align:right">$' + f'{float(pr):,.2f}' + '</div>'
-                    '</div></div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<div class="mover-card"><div><div class="mover-sym">' + sym + '</div><div class="mover-name">' + nm + '</div></div><div><div class="mover-chg" style="color:#f87171">-' + f'{chgp_val:.2f}%' + '</div><div style="font-size:11px;color:#64748b;text-align:right">$' + f'{float(pr):,.2f}' + '</div></div></div>', unsafe_allow_html=True)
 
-    # General market news
     if gen_news:
         section("Market News")
         for article in gen_news:
-            title    = article.get("title", article.get("headline", ""))
-            url_link = article.get("url", article.get("link", "#"))
-            source   = article.get("site", article.get("source", ""))
-            pub_raw  = article.get("publishedDate", article.get("datetime", "")) or ""
+            title    = article.get("title", "")
+            url_link = article.get("url", "#")
+            source   = article.get("site", "")
+            pub_raw  = article.get("publishedDate", "") or ""
             pub_date = pub_raw[:10] if pub_raw else ""
             if not title: continue
-            st.markdown(
-                '<a href="' + url_link + '" target="_blank" style="text-decoration:none;">'
-                '<div class="news-card">'
-                '<div class="news-dot"></div>'
-                '<div><div class="news-title">' + title + '</div>'
-                '<div class="news-meta"><span class="news-src">' + source + '</span>'
-                + (' · ' + pub_date if pub_date else '') +
-                '</div></div></div></a>',
-                unsafe_allow_html=True
-            )
+            st.markdown('<a href="' + url_link + '" target="_blank" style="text-decoration:none;"><div class="news-card"><div class="news-dot"></div><div><div class="news-title">' + title + '</div><div class="news-meta"><span class="news-src">' + source + '</span>' + (' · ' + pub_date if pub_date else '') + '</div></div></div></a>', unsafe_allow_html=True)
 
 if analyse or selected_ticker:
     if not ticker_symbol:
-        st.warning("Please enter a company name or ticker symbol.")
+        st.warning("Please enter a ticker symbol.")
         st.stop()
     try:
         loader = st.empty()
-        loader.markdown('''
-        <div class="ml-loader">
-          <div class="ml-chart">
-            <div class="ml-bar"></div><div class="ml-bar"></div>
-            <div class="ml-bar"></div><div class="ml-bar"></div>
-            <div class="ml-bar"></div><div class="ml-bar"></div>
-            <div class="ml-bar"></div>
-          </div>
-          <div class="ml-txt">Fetching market data</div>
-        </div>''', unsafe_allow_html=True)
-        # Step 1: try direct ticker lookup
-        profile = fetch_profile(ticker_symbol)
+        loader.markdown('''<div class="ml-loader"><div class="ml-chart"><div class="ml-bar"></div><div class="ml-bar"></div><div class="ml-bar"></div><div class="ml-bar"></div><div class="ml-bar"></div><div class="ml-bar"></div><div class="ml-bar"></div></div><div class="ml-txt">Fetching market data</div></div>''', unsafe_allow_html=True)
 
-        # Step 2: if not found, search by name/ticker
+        profile = fetch_profile(ticker_symbol)
         if not profile:
             search_hits = fmp_search(ticker_symbol)
             if search_hits:
                 ticker_symbol = search_hits[0].get("symbol", ticker_symbol).upper()
                 profile = fetch_profile(ticker_symbol)
-
-        # Step 3: still not found — show helpful error
         if not profile:
             st.error(f"Could not find **{ticker_symbol}**. Please enter a valid ticker e.g. AAPL, WMT, TSLA.")
             loader.empty()
@@ -1286,37 +931,26 @@ if analyse or selected_ticker:
         loader.empty()
 
         cp = float(profile.get("price", np.nan) or np.nan)
-        if pd.isna(cp) and not price_5y.empty:
+        if pd.isna(cp) and not price_5y.empty and "Close" in price_5y.columns:
             cp = float(price_5y["Close"].dropna().iloc[-1])
 
         is_etf = bool(profile.get("isEtf", False)) or not income
 
-        prev = price_5y["Close"].dropna() if not price_5y.empty else pd.Series()
-        chg  = float(prev.iloc[-1]-prev.iloc[-2]) if len(prev)>=2 else 0
-        chgp = (chg/float(prev.iloc[-2]))*100 if len(prev)>=2 else 0
+        if not price_5y.empty and "Close" in price_5y.columns:
+            prev = price_5y["Close"].dropna()
+            chg  = float(prev.iloc[-1]-prev.iloc[-2]) if len(prev)>=2 else 0
+            chgp = (chg/float(prev.iloc[-2]))*100 if len(prev)>=2 else 0
+        else:
+            chg = 0; chgp = 0
         ccls = "up" if chg>=0 else "down"
         csn  = "+" if chg>=0 else ""
         name = profile.get("companyName", ticker_symbol)
 
         if is_etf:
-            # Back button
             if st.button("← Back to Home", key="back_btn_etf"):
                 st.session_state.go_home = True
                 st.rerun()
-
-            st.markdown(f"""
-            <div class="co-card">
-              <div>
-                <div class="co-name">{name}<span class="co-sym">{ticker_symbol}</span></div>
-                <div class="co-meta">{profile.get('exchangeShortName','')}</div>
-                <span class="bdg bdg-etf">ETF</span>
-              </div>
-              <div>
-                <div class="price-val">${cp:,.2f}</div>
-                <div class="price-chg {ccls}">{csn}{chg:.2f} ({csn}{chgp:.2f}%)</div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="co-card"><div><div class="co-name">{name}<span class="co-sym">{ticker_symbol}</span></div><div class="co-meta">{profile.get("exchangeShortName","")}</div><span class="bdg bdg-etf">ETF</span></div><div><div class="price-val">${cp:,.2f}</div><div class="price-chg {ccls}">{csn}{chg:.2f} ({csn}{chgp:.2f}%)</div></div></div>', unsafe_allow_html=True)
             cd = capm(price_5y)
             section("1-Year Price")
             if not price_1y.empty: st.plotly_chart(chart_price(price_1y, ticker_symbol), use_container_width=True)
@@ -1326,15 +960,10 @@ if analyse or selected_ticker:
             with c2: st.markdown(mcard("Risk-Free Rate",fmt_pct(cd['risk_free_rate']),"10Y Treasury","#3b82f6"), unsafe_allow_html=True)
             with c3: st.markdown(mcard("Market Return",fmt_pct(cd['market_return']),"S&P 500 10Y avg","#34d399"), unsafe_allow_html=True)
             with c4: st.markdown(mcard("Expected Return",fmt_pct(cd['expected_return']),"Re = Rf + β(Rm−Rf)","#f59e0b"), unsafe_allow_html=True)
-            expense   = np.nan
-            holdings  = "N/A"
-            asset_cls = "N/A"
 
-            # Fetch ETF holdings from FMP
             holdings_data = []
             try:
-                h_url = f"https://financialmodelingprep.com/api/v3/etf-holder/{ticker_symbol}?apikey={FMP_API_KEY()}"
-                h_resp = requests.get(h_url, timeout=10)
+                h_resp = requests.get(f"https://financialmodelingprep.com/api/v3/etf-holder/{ticker_symbol}?apikey={FMP_API_KEY()}", timeout=10)
                 if h_resp.status_code == 200:
                     h_json = h_resp.json()
                     if isinstance(h_json, list):
@@ -1342,115 +971,48 @@ if analyse or selected_ticker:
             except Exception:
                 holdings_data = []
 
-            # Plain English ETF explanation
             section("What is this ETF?")
             etf_desc_map = {
-                "VOO":  "VOO tracks the S&P 500 — the 500 biggest companies in the US. Buying VOO is like buying a tiny piece of Apple, Microsoft, Amazon and 497 other major companies all at once. It's one of the most popular long-term investments in the world.",
-                "SPY":  "SPY also tracks the S&P 500 index. It's the oldest and most traded ETF in the world. Great for anyone who wants exposure to the overall US stock market without picking individual stocks.",
-                "QQQ":  "QQQ tracks the top 100 companies on the NASDAQ — mostly big tech names like Apple, Microsoft, Google and Amazon. It tends to grow faster than the S&P 500 but also drops harder during downturns.",
-                "VTI":  "VTI gives you exposure to the entire US stock market — over 3,500 companies. It's even more diversified than the S&P 500 and is a favourite for long-term passive investors.",
-                "GLD":  "GLD tracks the price of gold. People buy it as a safe haven when they're worried about the economy or inflation. It doesn't pay dividends but holds its value well during uncertain times.",
-                "BND":  "BND tracks the US bond market. Bonds are loans people give to companies or the government in exchange for regular interest payments. Less risky than stocks but lower returns.",
+                "VOO": "VOO tracks the S&P 500 — the 500 biggest companies in the US. Buying VOO is like buying a tiny piece of Apple, Microsoft, Amazon and 497 other major companies all at once. It's one of the most popular long-term investments in the world.",
+                "SPY": "SPY also tracks the S&P 500 index. It's the oldest and most traded ETF in the world. Great for anyone who wants exposure to the overall US stock market without picking individual stocks.",
+                "QQQ": "QQQ tracks the top 100 companies on the NASDAQ — mostly big tech names like Apple, Microsoft, Google and Amazon. It tends to grow faster than the S&P 500 but also drops harder during downturns.",
+                "VTI": "VTI gives you exposure to the entire US stock market — over 3,500 companies. It's even more diversified than the S&P 500 and is a favourite for long-term passive investors.",
+                "GLD": "GLD tracks the price of gold. People buy it as a safe haven when they're worried about the economy or inflation. It doesn't pay dividends but holds its value well during uncertain times.",
+                "BND": "BND tracks the US bond market. Bonds are loans people give to companies or the government in exchange for regular interest payments. Less risky than stocks but lower returns.",
             }
             holdings_count = len(holdings_data) if holdings_data else "multiple"
-            etf_desc = etf_desc_map.get(ticker_symbol,
-                f"{ticker_symbol} is an exchange-traded fund. "
-                f"Rather than picking a single company, buying this ETF gives you exposure to a basket of assets in one simple investment. "
-                f"It holds {holdings_count} or more positions, spreading your risk across many companies."
-            )
-            st.markdown(
-                f'<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.12);'
-                f'border-radius:14px;padding:18px 20px;font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">'
-                f'{etf_desc}</div>',
-                unsafe_allow_html=True
-            )
+            etf_desc = etf_desc_map.get(ticker_symbol, f"{ticker_symbol} is an exchange-traded fund. Rather than picking a single company, buying this ETF gives you exposure to a basket of assets in one simple investment. It holds {holdings_count} or more positions, spreading your risk across many companies.")
+            st.markdown(f'<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.12);border-radius:14px;padding:18px 20px;font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">{etf_desc}</div>', unsafe_allow_html=True)
 
-            # Top Holdings Table
-            if holdings_data and isinstance(holdings_data, list):
+            if holdings_data:
                 section("Top Holdings")
                 rows = ""
                 for h in holdings_data[:10]:
-                    sym  = h.get("asset", h.get("symbol", ""))
-                    name_h = h.get("name", h.get("companyName", sym))[:28]
+                    sym_h  = h.get("asset", h.get("symbol", ""))
+                    name_h = h.get("name", h.get("companyName", sym_h))[:28]
                     weight = h.get("weightPercentage", h.get("weight", 0)) or 0
                     try:
-                        w_val = float(weight)
-                        w_str = f"{w_val:.2f}%"
-                        bar_w = min(w_val * 6, 100)
+                        w_val = float(weight); w_str = f"{w_val:.2f}%"; bar_w = min(w_val * 6, 100)
                     except:
-                        w_str = "N/A"
-                        bar_w = 0
-                    rows += (
-                        '<tr>'
-                        '<td style="font-weight:600;color:#818cf8;">' + sym + '</td>'
-                        '<td style="color:#94a3b8;">' + name_h + '</td>'
-                        '<td>'
-                        '<div style="display:flex;align-items:center;gap:8px;">'
-                        '<div style="background:rgba(129,140,248,0.15);border-radius:4px;height:6px;width:80px;">'
-                        '<div style="background:#818cf8;border-radius:4px;height:6px;width:' + str(bar_w) + 'px;"></div>'
-                        '</div>'
-                        '<span style="color:#e2e8f0;font-size:13px;">' + w_str + '</span>'
-                        '</div></td></tr>'
-                    )
-                st.markdown(
-                    '<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);'
-                    'border-radius:16px;overflow:hidden;padding:4px 0;">'
-                    '<table style="width:100%;border-collapse:collapse;">'
-                    '<thead><tr>'
-                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Symbol</th>'
-                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Company</th>'
-                    '<th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Weight</th>'
-                    '</tr></thead>'
-                    '<tbody>' + rows + '</tbody>'
-                    '</table></div>',
-                    unsafe_allow_html=True
-                )
+                        w_str = "N/A"; bar_w = 0
+                    rows += '<tr><td style="font-weight:600;color:#818cf8;padding:10px 16px;">' + sym_h + '</td><td style="color:#94a3b8;padding:10px 16px;">' + name_h + '</td><td style="padding:10px 16px;"><div style="display:flex;align-items:center;gap:8px;"><div style="background:rgba(129,140,248,0.15);border-radius:4px;height:6px;width:80px;"><div style="background:#818cf8;border-radius:4px;height:6px;width:' + str(bar_w) + 'px;"></div></div><span style="color:#e2e8f0;font-size:13px;">' + w_str + '</span></div></td></tr>'
+                st.markdown('<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden;padding:4px 0;"><table style="width:100%;border-collapse:collapse;"><thead><tr><th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Symbol</th><th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Company</th><th style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;padding:10px 16px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);">Weight</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
 
-            # ETF AI Summary
             section("AI Analysis Summary")
             ai_box_etf = st.empty()
-            ai_box_etf.markdown(
-                '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
-                'border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">'
-                '🤖 Generating analysis...</div>',
-                unsafe_allow_html=True
-            )
+            ai_box_etf.markdown('<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">🤖 Generating analysis...</div>', unsafe_allow_html=True)
             try:
-                etf_prompt = (
-                    f"Explain the {name} ETF ({ticker_symbol}) to someone who has never invested before. "
-                    f"It tracks a basket of assets giving investors broad market exposure. "
-                    "Write exactly 3 warm casual sentences: "
-                    "1) What does this ETF actually do in simple terms. "
-                    "2) Who is it good for. "
-                    "3) One simple thing to be aware of. "
-                    "Rules: Zero jargon, zero numbers, talk like a friend, max 60 words."
-                )
-                if _GroqClient is None:
-                    raise Exception("groq not installed")
+                etf_prompt = (f"Explain the {name} ETF ({ticker_symbol}) to someone who has never invested before. It tracks a basket of assets giving investors broad market exposure. Write exactly 3 warm casual sentences: 1) What does this ETF actually do in simple terms. 2) Who is it good for. 3) One simple thing to be aware of. Rules: Zero jargon, zero numbers, talk like a friend, max 60 words.")
+                if _GroqClient is None: raise Exception("groq not installed")
                 groq_key = st.secrets.get("GROQ_API_KEY", "")
-                if not groq_key:
-                    raise Exception("No GROQ_API_KEY")
+                if not groq_key: raise Exception("No GROQ_API_KEY")
                 groq_client = _GroqClient(api_key=groq_key)
-                etf_response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role":"user","content": etf_prompt}],
-                    max_tokens=150, temperature=0.7,
-                )
+                etf_response = groq_client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": etf_prompt}], max_tokens=150, temperature=0.7)
                 etf_summary = etf_response.choices[0].message.content.strip()
-                ai_box_etf.markdown(
-                    '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
-                    'border-radius:14px;padding:18px 20px;">'
-                    '<div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;'
-                    'text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div>'
-                    '<div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">' + etf_summary +
-                    '</div><div style="font-size:10px;color:#475569;margin-top:10px;">'
-                    'Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>',
-                    unsafe_allow_html=True
-                )
+                ai_box_etf.markdown('<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);border-radius:14px;padding:18px 20px;"><div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div><div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">' + etf_summary + '</div><div style="font-size:10px;color:#475569;margin-top:10px;">Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>', unsafe_allow_html=True)
             except Exception:
                 ai_box_etf.empty()
 
-            # ETF News
             section("Latest News")
             etf_news = fetch_news(ticker_symbol)
             if etf_news:
@@ -1461,18 +1023,9 @@ if analyse or selected_ticker:
                     pub_raw  = article.get("publishedDate", "") or ""
                     pub_date = pub_raw[:10] if pub_raw else ""
                     if not title: continue
-                    st.markdown(
-                        '<a href="' + url_link + '" target="_blank" style="text-decoration:none;">'
-                        '<div class="news-card"><div class="news-dot"></div>'
-                        '<div><div class="news-title">' + title + '</div>'
-                        '<div class="news-meta"><span class="news-src">' + source + '</span>'
-                        + (' · ' + pub_date if pub_date else '') +
-                        '</div></div></div></a>',
-                        unsafe_allow_html=True
-                    )
+                    st.markdown('<a href="' + url_link + '" target="_blank" style="text-decoration:none;"><div class="news-card"><div class="news-dot"></div><div><div class="news-title">' + title + '</div><div class="news-meta"><span class="news-src">' + source + '</span>' + (' · ' + pub_date if pub_date else '') + '</div></div></div></a>', unsafe_allow_html=True)
             else:
                 st.caption("News not available for this ETF.")
-
             st.stop()
 
         # ── Stock branch ──────────────────────────────────────────────────────
@@ -1493,127 +1046,51 @@ if analyse or selected_ticker:
 
         sec = profile.get("sector","N/A"); ind = profile.get("industry","N/A")
 
-        # Back button
         if st.button("← Back to Home", key="back_btn"):
             st.session_state.go_home = True
             st.rerun()
 
-        st.markdown(f"""
-        <div class="co-card">
-          <div>
-            <div class="co-name">{name}<span class="co-sym">{ticker_symbol}</span></div>
-            <div class="co-meta">{sec} · {ind}</div>
-            <span class="bdg bdg-stock">STOCK</span>
-            <span class="bdg {rcls}" style="margin-left:8px">{rec}</span>
-          </div>
-          <div>
-            <div class="price-val">${cp:,.2f}</div>
-            <div class="price-chg {ccls}">{csn}{chg:.2f} ({csn}{chgp:.2f}%)</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="co-card"><div><div class="co-name">{name}<span class="co-sym">{ticker_symbol}</span></div><div class="co-meta">{sec} · {ind}</div><span class="bdg bdg-stock">STOCK</span><span class="bdg {rcls}" style="margin-left:8px">{rec}</span></div><div><div class="price-val">${cp:,.2f}</div><div class="price-chg {ccls}">{csn}{chg:.2f} ({csn}{chgp:.2f}%)</div></div></div>', unsafe_allow_html=True)
 
         section("Company Overview")
-        mc_v = profile.get("mktCap", np.nan)
-        # FMP sometimes returns null mktCap — calculate from price * shares
-        if pd.isna(mc_v) or mc_v == 0:
-            shares = (profile.get("sharesOutstanding") or
-                      profile.get("shares") or
-                      profile.get("floatShares"))
+        mc_v = float(profile.get("mktCap") or 0)
+        if mc_v == 0:
+            shares = float(profile.get("sharesOutstanding") or profile.get("shares") or profile.get("floatShares") or 0)
             if shares and pd.notna(cp) and cp:
-                mc_v = float(shares) * float(cp)
-        # Last resort — try getting it from the income statement shares
-        if (pd.isna(mc_v) or mc_v == 0) and income:
-            eps_val = income[0].get("eps", 0) or 0
-            ni_val2 = income[0].get("netIncome", 0) or 0
-            if eps_val and ni_val2 and eps_val != 0:
+                mc_v = shares * cp
+        if mc_v == 0 and income:
+            eps_val = float(income[0].get("eps") or 0)
+            ni_val2 = float(income[0].get("netIncome") or 0)
+            if eps_val and ni_val2:
                 shares_est = ni_val2 / eps_val
                 if shares_est > 0 and pd.notna(cp):
                     mc_v = shares_est * cp
+        mc_v = mc_v if mc_v > 0 else np.nan
         emp  = profile.get("fullTimeEmployees","N/A")
         cty  = profile.get("country","N/A")
-        # Country full name mapping
-        country_names = {
-            "US":"United States","GB":"United Kingdom","CA":"Canada","AU":"Australia",
-            "DE":"Germany","FR":"France","JP":"Japan","CN":"China","IN":"India",
-            "BR":"Brazil","MX":"Mexico","KR":"South Korea","SG":"Singapore",
-            "HK":"Hong Kong","NL":"Netherlands","SE":"Sweden","CH":"Switzerland",
-            "IL":"Israel","TW":"Taiwan","IE":"Ireland",
-        }
+        country_names = {"US":"United States","GB":"United Kingdom","CA":"Canada","AU":"Australia","DE":"Germany","FR":"France","JP":"Japan","CN":"China","IN":"India","BR":"Brazil","MX":"Mexico","KR":"South Korea","SG":"Singapore","HK":"Hong Kong","NL":"Netherlands","SE":"Sweden","CH":"Switzerland","IL":"Israel","TW":"Taiwan","IE":"Ireland"}
         cty_display = country_names.get(cty, cty)
         rv   = float(rev_s.iloc[-1]) if len(rev_s) else np.nan
         niv  = float(ni_s.iloc[-1])  if len(ni_s)  else np.nan
         ocfv = float(ocf_s.iloc[-1]) if len(ocf_s) else np.nan
         emps = f"{emp:,}" if isinstance(emp,int) else str(emp)
 
-        st.markdown(f"""
-        <div class="ov">
-          <div class="ov-i"><div class="ov-l">Market Cap</div><div class="ov-v">{fmt_big(mc_v)}</div></div>
-          <div class="ov-i"><div class="ov-l">Revenue (TTM)</div><div class="ov-v">{fmt_big(rv)}</div></div>
-          <div class="ov-i"><div class="ov-l">Net Income</div><div class="ov-v">{fmt_big(niv)}</div></div>
-          <div class="ov-i"><div class="ov-l">Operating CF</div><div class="ov-v">{fmt_big(ocfv)}</div></div>
-          <div class="ov-i"><div class="ov-l">Employees</div><div class="ov-v">{emps}</div></div>
-          <div class="ov-i"><div class="ov-l">Headquarters</div><div class="ov-v">{cty_display}</div></div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="ov"><div class="ov-i"><div class="ov-l">Market Cap</div><div class="ov-v">{fmt_big(mc_v)}</div></div><div class="ov-i"><div class="ov-l">Revenue (TTM)</div><div class="ov-v">{fmt_big(rv)}</div></div><div class="ov-i"><div class="ov-l">Net Income</div><div class="ov-v">{fmt_big(niv)}</div></div><div class="ov-i"><div class="ov-l">Operating CF</div><div class="ov-v">{fmt_big(ocfv)}</div></div><div class="ov-i"><div class="ov-l">Employees</div><div class="ov-v">{emps}</div></div><div class="ov-i"><div class="ov-l">Headquarters</div><div class="ov-v">{cty_display}</div></div></div>', unsafe_allow_html=True)
 
-        # ── AI Plain English Summary ─────────────────────────────────────────
         section("AI Analysis Summary")
         ai_box = st.empty()
-        ai_box.markdown(
-            '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
-            'border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">'
-            '🤖 Generating analysis...</div>',
-            unsafe_allow_html=True
-        )
+        ai_box.markdown('<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);border-radius:14px;padding:18px 20px;font-size:13px;color:#64748b;font-weight:300;line-height:1.8;">🤖 Generating analysis...</div>', unsafe_allow_html=True)
         try:
-            gv2  = float(gm.iloc[-1])  if len(gm)  else 0
-            nv2  = float(nm.iloc[-1])  if len(nm)  else 0
-            rav2 = float(roa.iloc[-1]) if len(roa) else 0
-            crv2 = float(cr.iloc[-1])  if len(cr)  else 0
-            upside_val = upside if upside is not None else 0
-
-            prompt = (
-                f"Explain {name} stock in 3 simple sentences to someone who has never invested before. "
-                f"The model says {rec}. "
-                "Sentence 1: Describe how good this company is at making money, like explaining to a friend. "
-                "Sentence 2: Tell them simply whether it is a good time to buy, hold or be patient with it. "
-                "Sentence 3: Mention one simple everyday thing to watch out for — avoid all finance words. "
-                "Rules: Zero finance jargon. Zero numbers. Zero terms like cash flow, ratio, margin, reserves. "
-                "Imagine explaining to a friend at lunch. Warm, simple, helpful. Max 60 words."
-            )
-
-            if _GroqClient is None:
-                raise Exception("groq not installed")
+            prompt = (f"Explain {name} stock in 3 simple sentences to someone who has never invested before. The model says {rec}. Sentence 1: Describe how good this company is at making money, like explaining to a friend. Sentence 2: Tell them simply whether it is a good time to buy, hold or be patient with it. Sentence 3: Mention one simple everyday thing to watch out for — avoid all finance words. Rules: Zero finance jargon. Zero numbers. Zero terms like cash flow, ratio, margin, reserves. Imagine explaining to a friend at lunch. Warm, simple, helpful. Max 60 words.")
+            if _GroqClient is None: raise Exception("groq not installed")
             api_key = st.secrets.get("GROQ_API_KEY", "")
-            if not api_key:
-                raise Exception("No GROQ_API_KEY in secrets")
+            if not api_key: raise Exception("No GROQ_API_KEY in secrets")
             client = _GroqClient(api_key=api_key)
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role":"user","content": prompt}],
-                max_tokens=150,
-                temperature=0.7,
-            )
+            response = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role":"user","content": prompt}], max_tokens=150, temperature=0.7)
             summary = response.choices[0].message.content.strip()
-            ai_box.markdown(
-                '<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);'
-                'border-radius:14px;padding:18px 20px;">'
-                '<div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;'
-                'text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div>'
-                '<div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">'
-                + summary +
-                '</div><div style="font-size:10px;color:#475569;margin-top:10px;">'
-                'Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>',
-                unsafe_allow_html=True
-            )
+            ai_box.markdown('<div style="background:rgba(129,140,248,0.06);border:1px solid rgba(129,140,248,0.15);border-radius:14px;padding:18px 20px;"><div style="font-size:10px;color:#818cf8;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">🤖 AI Summary</div><div style="font-size:14px;color:#e2e8f0;font-weight:300;line-height:1.9;">' + summary + '</div><div style="font-size:10px;color:#475569;margin-top:10px;">Generated by Groq AI (Llama 3.3) · Not financial advice</div></div>', unsafe_allow_html=True)
         except Exception as ai_err:
-            ai_box.markdown(
-                '<div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15);'
-                'border-radius:14px;padding:14px 18px;font-size:12px;color:#f87171;">'
-                'AI Summary unavailable: ' + str(ai_err) + '</div>',
-                unsafe_allow_html=True
-            )
+            ai_box.markdown('<div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15);border-radius:14px;padding:14px 18px;font-size:12px;color:#f87171;">AI Summary unavailable: ' + str(ai_err) + '</div>', unsafe_allow_html=True)
 
         section("1-Year Stock Price")
         if not price_1y.empty: st.plotly_chart(chart_price(price_1y, ticker_symbol), use_container_width=True)
@@ -1625,7 +1102,6 @@ if analyse or selected_ticker:
         rav=float(roa.iloc[-1]) if len(roa) else np.nan
         rev=float(roe.iloc[-1]) if len(roe) else np.nan
         ev=float(eps_s.iloc[-1]) if len(eps_s) else np.nan
-
         c1,c2,c3 = st.columns(3)
         with c1:
             st.markdown(mcard("Gross Margin",    fmt_pct(gv),  "Gross profit / revenue",   "#34d399", qual(gv,  0.2, 0.4)), unsafe_allow_html=True)
@@ -1635,8 +1111,7 @@ if analyse or selected_ticker:
             st.markdown(mcard("Return on Equity",fmt_pct(rev), "Net income / equity",        "#ec4899", qual(rev, 0.1, 0.2)),  unsafe_allow_html=True)
         with c3:
             st.markdown(mcard("Net Margin",      fmt_pct(nv),  "Net income / revenue",      "#818cf8", qual(nv,  0.05,0.15)), unsafe_allow_html=True)
-            st.markdown(mcard("EPS", f"${fmt_num(ev)}" if pd.notna(ev) else "N/A",
-                              "Diluted earnings per share", "#a78bfa"), unsafe_allow_html=True)
+            st.markdown(mcard("EPS", f"${fmt_num(ev)}" if pd.notna(ev) else "N/A", "Diluted earnings per share", "#a78bfa"), unsafe_allow_html=True)
 
         section("Liquidity Ratios")
         crv=float(cr.iloc[-1]) if len(cr) else np.nan
@@ -1651,11 +1126,9 @@ if analyse or selected_ticker:
         c1,c2,c3,c4 = st.columns(4)
         with c1: st.markdown(mcard("P/E Ratio",        fmt_num(pe), "Price / earnings",       "#f59e0b"), unsafe_allow_html=True)
         with c2: st.markdown(mcard("Div Payout Ratio", fmt_pct(dpr),"Dividends / net income", "#ec4899"), unsafe_allow_html=True)
-        with c3: st.markdown(mcard("Debt-to-Equity",   fmt_num(dte),"Total debt / equity",    "#f87171",
-                             qual(2-dte if pd.notna(dte) else np.nan,0,1)), unsafe_allow_html=True)
+        with c3: st.markdown(mcard("Debt-to-Equity",   fmt_num(dte),"Total debt / equity",    "#f87171", qual(2-dte if pd.notna(dte) else np.nan,0,1)), unsafe_allow_html=True)
         sgr_display = sgr if pd.notna(sgr) else (roe_v2 * 0.7 if pd.notna(roe_v2) else np.nan)
-        with c4: st.markdown(mcard("Sust. Growth Rate",fmt_pct(sgr_display),"ROE × retention ratio",  "#34d399",
-                             qual(sgr_display,0.05,0.12)), unsafe_allow_html=True)
+        with c4: st.markdown(mcard("Sust. Growth Rate",fmt_pct(sgr_display),"ROE × retention ratio","#34d399", qual(sgr_display,0.05,0.12)), unsafe_allow_html=True)
 
         section("CAPM & Cost of Equity")
         c1,c2,c3,c4 = st.columns(4)
@@ -1695,23 +1168,12 @@ if analyse or selected_ticker:
             bw     = min(max((upside+50)/100*100,2),100)
             bc     = "#34d399" if upside>=0 else "#f87171"
             us_str = f"{'+' if upside>=0 else ''}{upside:.1f}%"
-            st.markdown(f"""
-            <div class="val-c">
-              <div class="val-r"><span class="val-l">Current Market Price</span><span class="val-n">${cp:,.2f}</span></div>
-              <div class="val-r"><span class="val-l">Intrinsic Price (DCF)</span><span class="val-n">${ip:,.2f}</span></div>
-              <div class="val-r"><span class="val-l">Upside / Downside</span>
-                <span class="val-n" style="color:{bc}">{us_str}</span></div>
-              <div class="bar-bg"><div class="bar-fg" style="width:{bw:.1f}%;background:{bc}"></div></div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f'<div class="val-c"><div class="val-r"><span class="val-l">Current Market Price</span><span class="val-n">${cp:,.2f}</span></div><div class="val-r"><span class="val-l">Intrinsic Price (DCF)</span><span class="val-n">${ip:,.2f}</span></div><div class="val-r"><span class="val-l">Upside / Downside</span><span class="val-n" style="color:{bc}">{us_str}</span></div><div class="bar-bg"><div class="bar-fg" style="width:{bw:.1f}%;background:{bc}"></div></div></div>', unsafe_allow_html=True)
 
-
-        # ── Revenue & Earnings Trend ─────────────────────────────────────────
         section("Revenue & Earnings Trend")
         if income:
             st.plotly_chart(chart_revenue_earnings(income), use_container_width=True)
 
-        # ── Competitors Comparison ───────────────────────────────────────────
         section("Competitors Comparison")
         peer_syms = fetch_peers(ticker_symbol)
         if peer_syms:
@@ -1731,59 +1193,28 @@ if analyse or selected_ticker:
                     eps_p = inc_p[0].get("eps", np.nan)
                     pr_p  = float(pp.get("price", np.nan) or np.nan)
                     pe_p  = pr_p / eps_p if pd.notna(eps_p) and eps_p else np.nan
-                peers_data.append({
-                    "symbol": ps, "name": pp.get("companyName", ps)[:22],
-                    "price": float(pp.get("price", np.nan) or np.nan),
-                    "mktCap": pp.get("mktCap", np.nan),
-                    "grossMargin": gm_p, "netMargin": nm_p,
-                    "roe": roe_p, "pe": pe_p,
-                })
+                peers_data.append({"symbol": ps, "name": pp.get("companyName", ps)[:22], "price": float(pp.get("price", np.nan) or np.nan), "mktCap": pp.get("mktCap", np.nan), "grossMargin": gm_p, "netMargin": nm_p, "roe": roe_p, "pe": pe_p})
 
             if peers_data:
                 rows = ""
                 for pd_ in peers_data:
-                    is_cur  = pd_["symbol"] == ticker_symbol
-                    # Skip non-current rows where we have no meaningful data
+                    is_cur = pd_["symbol"] == ticker_symbol
                     if not is_cur:
-                        has_data = any([
-                            pd.notna(pd_["grossMargin"]),
-                            pd.notna(pd_["netMargin"]),
-                            pd.notna(pd_["pe"]),
-                        ])
-                        if not has_data:
-                            continue
-                    rc      = "cur-row" if is_cur else ""
-                    sl      = "<b>" + pd_["symbol"] + "</b>" if is_cur else pd_["symbol"]
-                    gms     = f'{pd_["grossMargin"]*100:.1f}%' if pd.notna(pd_["grossMargin"]) else "—"
-                    nms     = f'{pd_["netMargin"]*100:.1f}%'   if pd.notna(pd_["netMargin"])   else "—"
-                    roes    = f'{pd_["roe"]*100:.1f}%'         if pd.notna(pd_["roe"])          else "—"
-                    pes     = f'{pd_["pe"]:.1f}x'              if pd.notna(pd_["pe"])           else "—"
-                    mcs     = fmt_big(pd_["mktCap"]) if pd.notna(pd_["mktCap"]) else "—"
-                    prs     = f'${pd_["price"]:,.2f}' if pd.notna(pd_["price"]) else "—"
-                    rows   += (
-                        '<tr class="' + rc + '"><td>' + sl +
-                        '<br><span style="font-size:11px;color:#64748b">' + pd_["name"] + '</span></td>' +
-                        '<td class="num">' + prs + '</td>' +
-                        '<td class="num">' + mcs + '</td>' +
-                        '<td class="num">' + gms + '</td>' +
-                        '<td class="num">' + nms + '</td>' +
-                        '<td class="num">' + roes + '</td>' +
-                        '<td class="num">' + pes + '</td></tr>'
-                    )
-                table_html = (
-                    '<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);'
-                    'border-radius:16px;overflow:hidden;padding:4px 0;">'
-                    '<table class="peers-table"><thead><tr>'
-                    '<th>Company</th><th>Price</th><th>Mkt Cap</th>'
-                    '<th>Gross Margin</th><th>Net Margin</th><th>ROE</th><th>P/E</th>'
-                    '</tr></thead><tbody>' + rows + '</tbody></table></div>'
-                )
-                st.markdown(table_html, unsafe_allow_html=True)
+                        if not any([pd.notna(pd_["grossMargin"]), pd.notna(pd_["netMargin"]), pd.notna(pd_["pe"])]): continue
+                    rc  = "cur-row" if is_cur else ""
+                    sl  = "<b>" + pd_["symbol"] + "</b>" if is_cur else pd_["symbol"]
+                    gms = f'{pd_["grossMargin"]*100:.1f}%' if pd.notna(pd_["grossMargin"]) else "—"
+                    nms = f'{pd_["netMargin"]*100:.1f}%'   if pd.notna(pd_["netMargin"])   else "—"
+                    roes= f'{pd_["roe"]*100:.1f}%'         if pd.notna(pd_["roe"])          else "—"
+                    pes = f'{pd_["pe"]:.1f}x'              if pd.notna(pd_["pe"])           else "—"
+                    mcs = fmt_big(pd_["mktCap"]) if pd.notna(pd_["mktCap"]) else "—"
+                    prs = f'${pd_["price"]:,.2f}' if pd.notna(pd_["price"]) else "—"
+                    rows += '<tr class="' + rc + '"><td>' + sl + '<br><span style="font-size:11px;color:#64748b">' + pd_["name"] + '</span></td><td class="num">' + prs + '</td><td class="num">' + mcs + '</td><td class="num">' + gms + '</td><td class="num">' + nms + '</td><td class="num">' + roes + '</td><td class="num">' + pes + '</td></tr>'
+                st.markdown('<div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:16px;overflow:hidden;padding:4px 0;"><table class="peers-table"><thead><tr><th>Company</th><th>Price</th><th>Mkt Cap</th><th>Gross Margin</th><th>Net Margin</th><th>ROE</th><th>P/E</th></tr></thead><tbody>' + rows + '</tbody></table></div>', unsafe_allow_html=True)
                 st.plotly_chart(chart_peers(peers_data, ticker_symbol), use_container_width=True)
         else:
             st.caption("Peer data not available for this ticker.")
 
-        # ── Latest News ──────────────────────────────────────────────────────
         section("Latest News")
         news = fetch_news(ticker_symbol)
         if news:
@@ -1793,24 +1224,13 @@ if analyse or selected_ticker:
                 source   = article.get("site", article.get("source", ""))
                 pub_raw  = article.get("publishedDate", article.get("datetime", "")) or ""
                 pub_date = pub_raw[:10] if pub_raw else ""
-                meta     = source + (" · " + pub_date if pub_date else "")
-                st.markdown(
-                    '<a href="' + url_link + '" target="_blank" style="text-decoration:none;">'
-                    '<div class="news-card">'
-                    '<div class="news-dot"></div>'
-                    '<div><div class="news-title">' + title + '</div>'
-                    '<div class="news-meta"><span class="news-src">' + source + '</span>'
-                    + (' · ' + pub_date if pub_date else '') +
-                    '</div></div></div></a>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<a href="' + url_link + '" target="_blank" style="text-decoration:none;"><div class="news-card"><div class="news-dot"></div><div><div class="news-title">' + title + '</div><div class="news-meta"><span class="news-src">' + source + '</span>' + (' · ' + pub_date if pub_date else '') + '</div></div></div></a>', unsafe_allow_html=True)
         else:
             st.caption("News not available for this ticker.")
 
     except Exception as e:
         st.error(f"Could not analyse {ticker_symbol}: {e}")
 
-# ── Footer ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="margin-top:60px;padding:28px 0 20px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
   <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;color:#818cf8;margin-bottom:8px;">MarketLens</div>
