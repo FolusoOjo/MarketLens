@@ -447,7 +447,25 @@ def fetch_prices(sym):
         p1 = df[df.index >= now - pd.DateOffset(years=1)]
         return p5, p1
 
-    # ── Primary: FMP /stable/ ─────────────────────────────────────────────────
+    # ── Primary: FMP api/v3 (free plan, works on Streamlit Cloud) ────────────
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{sym}?apikey={_k}"
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                data = data.get("historical", [])
+            if data and len(data) > 30:
+                df = pd.DataFrame(data)
+                df["date"] = pd.to_datetime(df["date"])
+                df = df.set_index("date").sort_index()
+                p5, p1 = _build_result(df)
+                if p5 is not None and not p5.empty:
+                    return p5, p1
+    except Exception:
+        pass
+
+    # ── Fallback: FMP /stable/ ────────────────────────────────────────────────
     try:
         url = f"https://financialmodelingprep.com/stable/historical-price-eod/full?symbol={sym}&apikey={_k}"
         r = requests.get(url, timeout=15)
@@ -465,7 +483,7 @@ def fetch_prices(sym):
     except Exception:
         pass
 
-    # ── Fallback: yfinance ────────────────────────────────────────────────────
+    # ── Last resort: yfinance ─────────────────────────────────────────────────
     try:
         import yfinance as yf
         df = yf.download(sym, period="6y", interval="1d",
