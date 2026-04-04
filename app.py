@@ -447,7 +447,7 @@ def fetch_prices(sym):
         p1 = df[df.index >= now - pd.DateOffset(years=1)]
         return p5, p1
 
-    # ── Primary: FMP api/v3 free endpoint — works on Streamlit Cloud ─────────
+    # ── FMP api/v3 — free plan, works on Streamlit Cloud for stocks + ETFs ──
     try:
         url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{sym}?apikey={_k}"
         r = requests.get(url, timeout=15)
@@ -464,7 +464,7 @@ def fetch_prices(sym):
     except Exception:
         pass
 
-    # ── Fallback: yfinance (works locally, may be blocked on Streamlit Cloud) ─
+    # ── Fallback: yfinance (localhost only) ───────────────────────────────────
     try:
         import yfinance as yf
         df = yf.download(sym, period="6y", interval="1d",
